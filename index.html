@@ -123,6 +123,31 @@
   #flexPanel .seg .lbl .pct { color: #6db3ff; font-variant-numeric: tabular-nums; }
   #flexPanel input[type=range] { width: 100%; accent-color: #6db3ff; }
   #flexPanel .foot { font-size: 10px; color: var(--muted); margin-top: 6px; }
+
+  #main { display: flex; flex: 1; min-height: 0; }
+  #tray {
+    width: 172px; flex-shrink: 0;
+    background: var(--panel); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+  }
+  #tray h3 { font-size: 12px; font-weight: 600; padding: 10px 12px 8px; color: var(--ink); }
+  #tray .list { flex: 1; overflow-y: auto; padding: 0 10px 10px; }
+  #tray .empty { color: var(--muted); font-size: 11px; padding: 4px 2px; line-height: 1.5; }
+  #tray .item {
+    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 9px;
+    background: var(--panel-2); cursor: pointer; overflow: hidden; position: relative;
+  }
+  #tray .item:hover { border-color: var(--accent); }
+  #tray .item.placing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  #tray .item canvas { display: block; width: 100%; height: 96px; background: var(--bg); }
+  #tray .item .nm { font-size: 11px; padding: 5px 8px; color: var(--ink); border-top: 1px solid var(--border); }
+  #tray .item .del {
+    position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; border-radius: 4px;
+    background: rgba(20,23,28,.7); color: #ff8a8a; font-size: 13px; line-height: 18px;
+    text-align: center; opacity: 0; transition: .1s;
+  }
+  #tray .item:hover .del { opacity: 1; }
+  #tray .item .del:hover { background: #c0392b; color: #fff; }
 </style>
 </head>
 <body>
@@ -191,17 +216,24 @@
     <label class="field" style="color:#10b981"><input id="showUnitplanDims" type="checkbox" checked> Unit</label>
     <label class="field" style="color:#d946ef"><input id="showLayoutDims" type="checkbox" checked> Layout</label>
     <div class="spacer"></div>
+    <button class="btn" id="saveLayoutBtn" title="Save the selected layout to the tray" disabled>Save layout</button>
     <button class="btn" id="deleteBtn" title="Delete selected (Del)">Delete</button>
     <button class="btn" id="clearBtn">Clear all</button>
     <button class="btn" id="fitBtn" title="Reset view (Home)">Fit view</button>
   </header>
 
-  <div id="stage">
-    <canvas id="cv"></canvas>
-    <div id="menu"></div>
-    <div id="flexPanel"></div>
-    <div id="tip">Pick a tool to begin</div>
-    <div id="hud"></div>
+  <div id="main">
+    <div id="stage">
+      <canvas id="cv"></canvas>
+      <div id="menu"></div>
+      <div id="flexPanel"></div>
+      <div id="tip">Pick a tool to begin</div>
+      <div id="hud"></div>
+    </div>
+    <div id="tray">
+      <h3>Saved Layouts</h3>
+      <div class="list" id="trayList"></div>
+    </div>
   </div>
 </div>
 
@@ -231,6 +263,8 @@
     dims: [],        // {id, a:{x,y}, b:{x,y}, off}  feet, off=offset feet
     elements: [],    // {id, ref:{x,y,xRef,yRef}, rot}  1×1 ft square, ref = insertion point
     showDims: { product:true, unitplan:true, layout:true }, // dim visibility per container kind
+    savedLayouts: [],// {id, name, w0, h0, thumb, grids, walls, elements} — normalized templates
+    placing: null,   // {templateId, picks:[{axis,ref,coord}]} while placing a saved layout
     selection: null, // {kind, id}
   };
   let nextId = 1;
@@ -653,17 +687,26 @@
     const w = cv.clientWidth, h = cv.clientHeight;
     ctx.clearRect(0, 0, w, h);
     drawBackgroundGrid(w, h);
-    drawWalls();          // walls render first, beneath everything
+    drawWalls();          // walls render first, beneath everything (incl. template walls)
     drawGridlines(w, h);
+    drawPlacedTemplates();// placed-layout grids & elements
     drawDims();
     drawElements();       // elements (dimmed if outside the focus)
     drawDimming();        // dim content outside open boundaries
     drawBoxes();          // boundary frames crisp on top of the dimming; selected/hover frontmost
     drawHoverHighlight(); // hovered/Tab-cycled container on the very top
+    drawPlacing();        // edge picks while placing a saved layout
     drawPreview();
     updateHud();
     updateFlexPanel();
     updateToolAvailability();
+    updateSaveBtn();
+    if (state.placing) {
+      const n = state.placing.picks.length;
+      document.getElementById('tip').textContent = `Placing layout — click four reference edges (2 vertical + 2 horizontal). Picked ${n}. Esc to cancel.`;
+    } else {
+      updateTip();
+    }
   }
 
   function drawBackgroundGrid(w, h) {
@@ -874,7 +917,6 @@
   }
 
   function drawWalls() {
-    if (!state.walls.length) return;
     const T = 1.3; // outline thickness (px)
     const rects = state.walls.map(wl=>{
       let aW=endPos(wl.a), bW=endPos(wl.b);
@@ -887,6 +929,15 @@
       const Hpx=Math.max(1.4, (wl.thickness||0.5)*ppfNow()/2);
       return { A, B, H:Hpx };
     });
+    // walls from placed layout templates (mapped through each box's extent)
+    for (const box of state.boxes) { if(!box.template)continue;
+      const e=boxExt(box), W=e.x2-e.x1, H=e.y2-e.y1;
+      for (const w of box.template.walls) {
+        const A=w2s({x:e.x1+w.ax*W, y:e.y1+w.ay*H}), B=w2s({x:e.x1+w.bx*W, y:e.y1+w.by*H});
+        rects.push({ A, B, H:Math.max(1.4,(w.thk||0.5)*ppfNow()/2) });
+      }
+    }
+    if (!rects.length) return;
     offCtx.setTransform(dpr,0,0,dpr,0,0);
     offCtx.clearRect(0,0,cv.clientWidth,cv.clientHeight);
     offCtx.globalCompositeOperation='source-over';
@@ -1049,7 +1100,7 @@
   }
   const hoverKey = list => list.map(c=>c.kind+c.id).join(',');
   function refreshHover(sp) {
-    const cands = (state.tool==='select' && !drag) ? hoverCandidatesAt(sp) : [];
+    const cands = (state.tool==='select' && !drag && !state.placing) ? hoverCandidatesAt(sp) : [];
     if (hoverKey(cands) !== hoverKey(hoverList)) { hoverList = cands; hoverIdx = 0; }
   }
 
@@ -1073,6 +1124,15 @@
     if (e.button !== 0) return;
     const wp = s2w(sp);
     const snapped = snapWorld(wp);
+
+    // placing a saved layout: each click picks a reference edge
+    if (state.placing) {
+      const pk = pickReference(wp, null);
+      if (pk && !state.placing.picks.some(p=>sameRef(p.ref,pk.ref)))
+        state.placing.picks.push({ axis:pk.axis, ref:pk.ref, coord:pk.coord });
+      if (pk) tryFinalizePlacement();
+      draw(); return;
+    }
 
     if (state.tool === 'select') {
       let hit = activeHover();   // the highlighted (hovered / Tab-cycled) target
@@ -1520,6 +1580,117 @@
       });
     });
   }
+  // ---- Saved layouts (templates) + placement -------------------------------
+  // Capture a layout's contents normalized to its rectangle (0..1).
+  function captureTemplate(box){
+    const e=boxExt(box), W=e.x2-e.x1||1, H=e.y2-e.y1||1;
+    const nx=x=>(x-e.x1)/W, ny=y=>(y-e.y1)/H;
+    const inRect=p=>p.x>=e.x1-0.05&&p.x<=e.x2+0.05&&p.y>=e.y1-0.05&&p.y<=e.y2+0.05;
+    const grids=state.gridlines.filter(g=>g.boxId===box.id).map(g=>({type:g.type, t:g.t}));
+    const walls=state.walls.filter(wl=>{const a=endPos(wl.a),b=endPos(wl.b);return inRect({x:(a.x+b.x)/2,y:(a.y+b.y)/2});})
+      .map(wl=>{const a=endPos(wl.a),b=endPos(wl.b);return{ax:nx(a.x),ay:ny(a.y),bx:nx(b.x),by:ny(b.y),thk:wl.thickness||0.5};});
+    const elements=state.elements.filter(el=>inRect(endPos(el.ref))).map(el=>{const p=endPos(el.ref);return{x:nx(p.x),y:ny(p.y),rot:el.rot||0};});
+    return {w0:W, h0:H, grids, walls, elements};
+  }
+  function saveSelectedLayout(){
+    const s=state.selection; if(!s||s.kind!=='box')return;
+    const box=findById(state.boxes,s.id); if(!box||box.kind!=='layout')return;
+    const name=(prompt('Name this layout:', 'Layout '+(state.savedLayouts.length+1))||'').trim();
+    if(!name)return;
+    state.savedLayouts.push({ id:uid(), name, ...captureTemplate(box) });
+    buildTray();
+  }
+  // Render a template into a small preview canvas.
+  function drawTemplateThumb(canvas, tpl){
+    const c=canvas.getContext('2d'), cw=canvas.width, ch=canvas.height, pad=8;
+    c.clearRect(0,0,cw,ch);
+    const sc=Math.min((cw-2*pad)/(tpl.w0||1),(ch-2*pad)/(tpl.h0||1));
+    const ox=(cw-tpl.w0*sc)/2, oy=(ch-tpl.h0*sc)/2;
+    const SX=fx=>ox+fx*sc, SY=fy=>oy+fy*sc; // fx,fy in feet
+    c.strokeStyle='#7e879a'; c.lineWidth=1; c.strokeRect(ox,oy,tpl.w0*sc,tpl.h0*sc);
+    c.strokeStyle='#7da0d0'; c.setLineDash([3,2]);
+    for(const g of tpl.grids){ c.beginPath();
+      if(g.type==='v'){c.moveTo(SX(g.t*tpl.w0),SY(0));c.lineTo(SX(g.t*tpl.w0),SY(tpl.h0));}
+      else{c.moveTo(SX(0),SY(g.t*tpl.h0));c.lineTo(SX(tpl.w0),SY(g.t*tpl.h0));} c.stroke(); }
+    c.setLineDash([]);
+    for(const w of tpl.walls){ const ax=SX(w.ax*tpl.w0),ay=SY(w.ay*tpl.h0),bx=SX(w.bx*tpl.w0),by=SY(w.by*tpl.h0);
+      const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1, hpx=Math.max(1.4,w.thk*sc/2), nx=-dy/len*hpx, ny=dx/len*hpx;
+      c.fillStyle='#e6e9ef'; c.beginPath(); c.moveTo(ax+nx,ay+ny);c.lineTo(bx+nx,by+ny);c.lineTo(bx-nx,by-ny);c.lineTo(ax-nx,ay-ny);c.closePath();c.fill();
+      c.strokeStyle='#5b6472';c.lineWidth=0.6;c.stroke(); }
+    for(const el of tpl.elements){ const a=(el.rot||0)*Math.PI/180,ca=Math.cos(a),sa=Math.sin(a);
+      const pts=[[-0.5,0],[0.5,0],[0.5,1],[-0.5,1]].map(([lx,ly])=>({x:SX(el.x*tpl.w0+lx*ca-ly*sa), y:SY(el.y*tpl.h0+lx*sa+ly*ca)}));
+      c.fillStyle='#c2c8d2'; c.beginPath(); c.moveTo(pts[0].x,pts[0].y); for(let i=1;i<4;i++)c.lineTo(pts[i].x,pts[i].y); c.closePath(); c.fill(); }
+  }
+  const trayList=document.getElementById('trayList');
+  function buildTray(){
+    if(!state.savedLayouts.length){ trayList.innerHTML='<div class="empty">Select a Layout and click “Save layout”. Then click a saved layout and pick four edges to place it.</div>'; return; }
+    trayList.innerHTML='';
+    for(const tpl of state.savedLayouts){
+      const item=document.createElement('div');
+      item.className='item'+(state.placing&&state.placing.templateId===tpl.id?' placing':'');
+      const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=96; item.appendChild(cv2);
+      const nm=document.createElement('div'); nm.className='nm'; nm.textContent=tpl.name; item.appendChild(nm);
+      const del=document.createElement('div'); del.className='del'; del.textContent='×'; del.title='Delete'; item.appendChild(del);
+      item.addEventListener('click', e=>{ if(e.target===del)return; startPlacing(tpl.id); });
+      del.addEventListener('click', e=>{ e.stopPropagation(); state.savedLayouts=state.savedLayouts.filter(t=>t.id!==tpl.id); if(state.placing&&state.placing.templateId===tpl.id)state.placing=null; buildTray(); draw(); });
+      trayList.appendChild(item);
+      drawTemplateThumb(cv2, tpl);
+    }
+  }
+  function startPlacing(id){ state.placing={templateId:id, picks:[]}; setTool('select'); buildTray(); draw(); }
+  function tryFinalizePlacement(){
+    const vert=state.placing.picks.filter(p=>p.axis==='h'); // vertical edges → x
+    const horz=state.placing.picks.filter(p=>p.axis==='v'); // horizontal edges → y
+    if(vert.length>=2 && horz.length>=2){
+      const vs=[...vert].sort((a,b)=>a.coord-b.coord), hs=[...horz].sort((a,b)=>a.coord-b.coord);
+      createPlacedLayout(findById(state.savedLayouts,state.placing.templateId),
+        { x1:vs[0].ref, x2:vs[vs.length-1].ref, y1:hs[0].ref, y2:hs[hs.length-1].ref });
+      state.placing=null; buildTray();
+    }
+  }
+  function createPlacedLayout(tpl, refs){
+    if(!tpl) return;
+    const x1=resolveRef(refs.x1), x2=resolveRef(refs.x2), y1=resolveRef(refs.y1), y2=resolveRef(refs.y2);
+    if(x1==null||x2==null||y1==null||y2==null)return;
+    const id=uid();
+    state.boxes.push({ id, kind:'layout',
+      x1:Math.min(x1,x2), y1:Math.min(y1,y2), x2:Math.max(x1,x2), y2:Math.max(y1,y2),
+      parentId:null, open:false,
+      bind:{ x1:refs.x1, y1:refs.y1, x2:refs.x2, y2:refs.y2 },
+      template:{ w0:tpl.w0, h0:tpl.h0, grids:tpl.grids.slice(), walls:tpl.walls.map(w=>({...w})), elements:tpl.elements.map(e=>({...e})) } });
+    state.selection={kind:'box',id};
+  }
+  // Render placed templates' grids & elements (walls go through drawWalls so they merge).
+  function drawPlacedTemplates(){
+    for(const box of state.boxes){ if(!box.template)continue;
+      const e=boxExt(box), W=e.x2-e.x1, H=e.y2-e.y1, col=boundaryColor(box);
+      ctx.setLineDash([7,5]); ctx.strokeStyle=col; ctx.lineWidth=1.3;
+      for(const g of box.template.grids){ ctx.beginPath();
+        if(g.type==='v'){const a=w2s({x:e.x1+g.t*W,y:e.y1}),b=w2s({x:e.x1+g.t*W,y:e.y2});ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);}
+        else{const a=w2s({x:e.x1,y:e.y1+g.t*H}),b=w2s({x:e.x2,y:e.y1+g.t*H});ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);} ctx.stroke(); }
+      ctx.setLineDash([]);
+      for(const el of box.template.elements){ const P={x:e.x1+el.x*W, y:e.y1+el.y*H};
+        const a=(el.rot||0)*Math.PI/180,ca=Math.cos(a),sa=Math.sin(a);
+        const cs=[[-0.5,0],[0.5,0],[0.5,1],[-0.5,1]].map(([lx,ly])=>w2s({x:P.x+lx*ca-ly*sa,y:P.y+lx*sa+ly*ca}));
+        ctx.beginPath();ctx.moveTo(cs[0].x,cs[0].y);for(let i=1;i<4;i++)ctx.lineTo(cs[i].x,cs[i].y);ctx.closePath();
+        ctx.fillStyle='#c2c8d2';ctx.fill();ctx.strokeStyle='#6b7280';ctx.lineWidth=1;ctx.stroke(); }
+    }
+  }
+  // Highlight picked/candidate edges while placing a saved layout.
+  function drawPlacing(){
+    if(!state.placing)return;
+    const drawRef=(ref,strong)=>{ const v=resolveRef(ref); if(v==null)return; const isV=ref.type==='grid'?(findById(state.gridlines,ref.id)||{}).type==='v':(ref.edge==='x1'||ref.edge==='x2');
+      ctx.strokeStyle=strong?'#4cd2ff':'rgba(76,210,255,.6)'; ctx.lineWidth=strong?2.5:1.6; ctx.setLineDash([6,4]); ctx.beginPath();
+      if(isV){const x=w2s({x:v,y:0}).x;ctx.moveTo(x,0);ctx.lineTo(x,cv.clientHeight);}else{const y=w2s({x:0,y:v}).y;ctx.moveTo(0,y);ctx.lineTo(cv.clientWidth,y);}
+      ctx.stroke(); ctx.setLineDash([]); };
+    for(const p of state.placing.picks) drawRef(p.ref,true);
+    const pk=pickReference(mouseWRaw,null); if(pk && !state.placing.picks.some(p=>sameRef(p.ref,pk.ref))) drawRef(pk.ref,false);
+  }
+  function updateSaveBtn(){
+    const s=state.selection, b=s&&s.kind==='box'?findById(state.boxes,s.id):null;
+    document.getElementById('saveLayoutBtn').disabled = !(b && b.kind==='layout');
+  }
+
   function hideBoxMenu(){ menuEl.style.display='none'; }
   function showBoxMenu(x, y, boxId){
     const bx = findById(state.boxes, boxId);
@@ -1734,6 +1905,7 @@
   document.getElementById('showUnitplanDims').addEventListener('change', e=>{ state.showDims.unitplan=e.target.checked; draw(); });
   document.getElementById('showLayoutDims').addEventListener('change', e=>{ state.showDims.layout=e.target.checked; draw(); });
   document.getElementById('deleteBtn').addEventListener('click', deleteSelection);
+  document.getElementById('saveLayoutBtn').addEventListener('click', saveSelectedLayout);
   document.getElementById('clearBtn').addEventListener('click', ()=>{
     if(confirm('Clear everything on the sheet?')){
       state.gridlines=[];state.walls=[];state.dims=[];state.boxes=[];state.elements=[];state.selection=null;draw();
@@ -1844,7 +2016,7 @@
     else if(k==='e')setTool('eqdim');
     else if(k==='f')setTool('flexdim');
     else if(e.key==='Delete'||e.key==='Backspace')deleteSelection();
-    else if(e.key==='Escape'){drag=null;dimBuild=null;state.selection=null;draw();}
+    else if(e.key==='Escape'){drag=null;dimBuild=null;state.placing=null;state.selection=null;buildTray();draw();}
     else if(e.key==='Home')fitView();
   });
   window.addEventListener('keyup', e=>{
@@ -1858,6 +2030,7 @@
     state.view={x:80,y:70,scale:1};
   }
   seed();
+  buildTray();
   resize();
   setTool('select');
   fitView();
