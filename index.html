@@ -227,7 +227,6 @@
       <canvas id="cv"></canvas>
       <div id="menu"></div>
       <div id="flexPanel"></div>
-      <div id="tip">Pick a tool to begin</div>
       <div id="hud"></div>
     </div>
     <div id="tray">
@@ -701,12 +700,6 @@
     updateFlexPanel();
     updateToolAvailability();
     updateSaveBtn();
-    if (state.placing) {
-      const n = state.placing.picks.length;
-      document.getElementById('tip').textContent = `Placing layout — click four reference edges (2 vertical + 2 horizontal). Picked ${n}. Esc to cancel.`;
-    } else {
-      updateTip();
-    }
   }
 
   function drawBackgroundGrid(w, h) {
@@ -995,6 +988,16 @@
   // Dimension model: { id, axis:'h'|'v', refs:[ref...], line }
   //   axis 'h' → horizontal dimension; refs are vertical features (resolve to x); line = y of the dim line.
   //   axis 'v' → vertical dimension;   refs are horizontal features (resolve to y); line = x of the dim line.
+  // The dim line's perpendicular position follows its container: stored as an
+  // offset (lineOff) from the container's top/left edge, so dragging the
+  // container moves the dimension with it.
+  function dimLine(d) {
+    if (d.containerId!=null && d.lineOff!=null) {
+      const b = findById(state.boxes, d.containerId);
+      if (b) { const e=boxExt(b); return (d.axis==='h' ? e.y1 : e.x1) + d.lineOff; }
+    }
+    return d.line;
+  }
   function drawDims() {
     for (const d of state.dims) {
       if (d.container && !state.showDims[d.container]) continue; // hidden by toggle
@@ -1021,16 +1024,17 @@
     const pct = (i) => (spec.percents && spec.percents[i]!=null) ? ` · ${spec.percents[i]}%` : '';
     const label = (seg,i) => eq ? `EQ (${fmtFeet(seg)})` : flex ? fmtFeet(seg)+pct(i) : (lock?'🔒 ':'') + fmtFeet(seg);
     ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=1.2; ctx.setLineDash([]);
+    const lineVal = dimLine(spec);
     const sorted = [...coords].sort((a,b)=>a-b);
     if (spec.axis==='h') {
-      const yL = w2s({x:0,y:spec.line}).y;
-      const sx = sorted.map(c=>w2s({x:c,y:spec.line}).x);
+      const yL = w2s({x:0,y:lineVal}).y;
+      const sx = sorted.map(c=>w2s({x:c,y:lineVal}).x);
       if (sorted.length>=2) { ctx.beginPath(); ctx.moveTo(sx[0],yL); ctx.lineTo(sx[sx.length-1],yL); ctx.stroke(); }
       for (const x of sx) { ctx.beginPath(); ctx.moveTo(x,yL-9); ctx.lineTo(x,yL+9); ctx.stroke(); }
       for (let i=0;i<sorted.length-1;i++) dimText((sx[i]+sx[i+1])/2, yL, label(sorted[i+1]-sorted[i], i), 0, color);
     } else {
-      const xL = w2s({x:spec.line,y:0}).x;
-      const sy = sorted.map(c=>w2s({x:spec.line,y:c}).y);
+      const xL = w2s({x:lineVal,y:0}).x;
+      const sy = sorted.map(c=>w2s({x:lineVal,y:c}).y);
       if (sorted.length>=2) { ctx.beginPath(); ctx.moveTo(xL,sy[0]); ctx.lineTo(xL,sy[sy.length-1]); ctx.stroke(); }
       for (const y of sy) { ctx.beginPath(); ctx.moveTo(xL-9,y); ctx.lineTo(xL+9,y); ctx.stroke(); }
       for (let i=0;i<sorted.length-1;i++) dimText(xL, (sy[i]+sy[i+1])/2, label(sorted[i+1]-sorted[i], i), -Math.PI/2, color);
@@ -1051,10 +1055,10 @@
   function dimLineEndpoints(d) {
     const coords = d.refs.map(resolveRef).filter(v=>v!=null);
     if (coords.length<2) return null;
-    const lo=Math.min(...coords), hi=Math.max(...coords);
+    const lo=Math.min(...coords), hi=Math.max(...coords), L=dimLine(d);
     return d.axis==='h'
-      ? [{x:lo,y:d.line},{x:hi,y:d.line}]
-      : [{x:d.line,y:lo},{x:d.line,y:hi}];
+      ? [{x:lo,y:L},{x:hi,y:L}]
+      : [{x:L,y:lo},{x:L,y:hi}];
   }
 
   // ---- Interaction ----------------------------------------------------------
@@ -1159,6 +1163,9 @@
           drag = { kind:'resizeBox', id:cornerHit.box.id, corner:cornerHit.corner };
           draw(); return;
         }
+        // nothing on an edge/handle → select the innermost box under the cursor
+        // (lets you click anywhere inside a layout to select it)
+        if (!hit) { const cb = boxContaining(wp); if (cb) hit = { kind:'box', id:cb.id }; }
       }
       state.selection = hit;
       if (hit) {
@@ -1167,7 +1174,7 @@
         // coords on first movement, then re-bound to grids on drop
         if (hit.kind==='box') drag.startExt = boxExt(findById(state.boxes, hit.id));
         if (hit.kind==='wall') { const wl=findById(state.walls, hit.id); drag.startA=endPos(wl.a); drag.startB=endPos(wl.b); }
-        if (hit.kind==='dim') { drag.origLine = findById(state.dims, hit.id).line; }
+        if (hit.kind==='dim') { drag.origLine = dimLine(findById(state.dims, hit.id)); }
         if (hit.kind==='element') { drag.startP = endPos(findById(state.elements, hit.id).ref); }
       }
       draw();
@@ -1276,6 +1283,8 @@
       const id=uid();
       const ac = activeContainer();
       const dim = { id, axis:dimBuild.axis, refs:dimBuild.refs.slice(), line:dimBuild.line, container: ac ? ac.kind : null, containerId: ac ? ac.id : null };
+      // store the dim line as an offset from the container so it moves with it
+      if (ac) { const e=boxExt(ac); dim.lineOff = dimBuild.line - (dim.axis==='h' ? e.y1 : e.x1); }
       if (dimBuild.lock) { dim.locked = true; dim.drives = computeDrives(dimBuild.refs); }
       else if (dimBuild.eq) { dim.eq = true; dim.drives = computeEQDrives(dimBuild.refs); }
       else if (dimBuild.flex) { if (!setupFlex(dim, id)) { dimBuild=null; draw(); return; } }
@@ -1461,7 +1470,10 @@
       ent.b.x=drag.startB.x+d.x; ent.b.y=drag.startB.y+d.y;
     } else if(drag.hit.kind==='dim'){
       // measured coords are locked to references; dragging just slides the dim line
-      ent.line = drag.origLine + (ent.axis==='h' ? d.y : d.x);
+      const newLine = drag.origLine + (ent.axis==='h' ? d.y : d.x);
+      const cb = ent.containerId!=null ? findById(state.boxes, ent.containerId) : null;
+      if (cb) { const e=boxExt(cb); ent.lineOff = newLine - (ent.axis==='h' ? e.y1 : e.x1); }
+      else ent.line = newLine;
     } else if(drag.hit.kind==='grid'){
       if(ent.boxId != null){
         const bx = findById(state.boxes, ent.boxId);
@@ -1877,25 +1889,7 @@
   function updateCursor(){
     stage.style.cursor = state.tool==='select' ? 'default' : 'crosshair';
   }
-  function updateTip(){
-    const tip=document.getElementById('tip');
-    const tips={
-      select:'Select & drag to move · resize from corners · right-click a box for Open/Copy · Ctrl+C / Ctrl+V · drag a box onto an open box’s grids to attach it',
-      box:'Click & drag to draw a bounding box · grids inside crop to it · right-click → Open to nest boxes inside',
-      grid:'Click to drop a vertical grid line · hold Shift for horizontal · to add grids inside a box, right-click it → Open first',
-      wall6:'Click & drag to draw a 6" wall · endpoints snap to grid/edge intersections & box corners, and follow them',
-      wall12:'Click & drag to draw a 12" wall · endpoints snap to grid/edge intersections & box corners, and follow them',
-      dim:'Click references (grid lines or box edges) one by one, then press Enter · keep clicking for a chained string · Esc to cancel',
-      lockdim:'Lock dimension: click a box edge then a grid line, press Enter · the grid is forced to keep this distance when the box scales · Esc to cancel',
-      eqdim:'EQ dimension: click the bounding references (box edges) and the grids between them, press Enter · the grids are forced to equal spacing · Esc to cancel',
-      flexdim:'Flex dimension: click the bounding edges and the grids between, press Enter · then use the sliders to set each segment’s share of any size change · Esc to cancel',
-      product:'Click & drag to draw a Product boundary (top level). Right-click → Open to place Unit Plans inside.',
-      unitplan:'Click & drag inside an OPEN Product to draw a Unit Plan. Right-click → Open to place Layouts inside.',
-      layout:'Click & drag inside an OPEN Unit Plan to draw a Layout.',
-      element:'Click an intersection (grid×grid, grid×edge) or a boundary corner to place a 1×1 element · right-click it to Rotate 90°'
-    };
-    tip.textContent=tips[state.tool]||'';
-  }
+  function updateTip(){ /* instructions bubble removed */ }
 
   document.getElementById('gridSize').addEventListener('input', e=>{
     state.gridSpacing=Math.max(0.25, parseFloat(e.target.value)||2); draw();
