@@ -1,0 +1,7 @@
+# Local preview tooling (not part of the app)
+.claude/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.log

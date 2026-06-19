@@ -1,0 +1,1867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Drafting Space — Grids & Walls</title>
+<style>
+  :root {
+    --bg: #1e2128;
+    --panel: #262a33;
+    --panel-2: #2e333d;
+    --ink: #e6e9ef;
+    --muted: #9aa3b2;
+    --accent: #4c9aff;
+    --accent-2: #2f6fd6;
+    --grid-line: #5b86c4;
+    --wall: #d7dce5;
+    --dim: #ffb454;
+    --border: #3a4150;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    overflow: hidden;
+    user-select: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 8px 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 14px; font-weight: 600; letter-spacing: .3px; }
+  header h1 span { color: var(--muted); font-weight: 400; }
+
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .tool {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--ink);
+    border-radius: 8px;
+    padding: 7px 11px;
+    cursor: pointer;
+    font-size: 11px;
+    min-width: 58px;
+    transition: .12s;
+  }
+  .tool:hover { background: #383e4a; }
+  .tool.active { background: var(--accent-2); border-color: var(--accent); color: #fff; }
+  .tool.disabled { opacity: .3; pointer-events: none; }
+  .tool svg { width: 18px; height: 18px; }
+  .sep { width: 1px; height: 34px; background: var(--border); margin: 0 4px; }
+
+  .btn {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--ink);
+    border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 12px;
+  }
+  .btn:hover { background: #383e4a; }
+  .spacer { flex: 1; }
+
+  .field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .field input[type=number] {
+    width: 64px; background: var(--bg); border: 1px solid var(--border);
+    color: var(--ink); border-radius: 6px; padding: 5px 7px; font-size: 12px;
+  }
+  .field input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); }
+
+  #stage { position: relative; flex: 1; overflow: hidden; cursor: crosshair; }
+  canvas { display: block; position: absolute; inset: 0; }
+
+  #hud {
+    position: absolute; bottom: 10px; left: 12px;
+    background: rgba(20,23,28,.82); border: 1px solid var(--border);
+    padding: 6px 10px; border-radius: 8px; font-size: 12px; color: var(--muted);
+    pointer-events: none; font-variant-numeric: tabular-nums;
+  }
+  #tip {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    background: rgba(20,23,28,.82); border: 1px solid var(--border);
+    padding: 6px 14px; border-radius: 20px; font-size: 12px; color: var(--ink);
+    pointer-events: none;
+  }
+  kbd {
+    background: var(--panel-2); border: 1px solid var(--border); border-bottom-width: 2px;
+    border-radius: 4px; padding: 1px 5px; font-size: 11px; font-family: inherit;
+  }
+  #menu {
+    position: absolute; z-index: 50; min-width: 150px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 5px; display: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  #menu .item {
+    padding: 7px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
+    display: flex; justify-content: space-between; gap: 18px; align-items: center;
+  }
+  #menu .item:hover { background: var(--accent-2); color: #fff; }
+  #menu .item.danger:hover { background: #c0392b; }
+  #menu .item .sc { color: var(--muted); font-size: 11px; }
+  #menu .item:hover .sc { color: #dbe6ff; }
+  #menu .divider { height: 1px; background: var(--border); margin: 4px 2px; }
+
+  #flexPanel {
+    position: absolute; top: 12px; right: 12px; z-index: 40; width: 240px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px; display: none; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  #flexPanel h3 { font-size: 12px; font-weight: 600; margin-bottom: 2px; color:#6db3ff; }
+  #flexPanel .sub { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+  #flexPanel .seg { margin-bottom: 9px; }
+  #flexPanel .seg .lbl { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 3px; }
+  #flexPanel .seg .lbl .len { color: var(--muted); }
+  #flexPanel .seg .lbl .pct { color: #6db3ff; font-variant-numeric: tabular-nums; }
+  #flexPanel input[type=range] { width: 100%; accent-color: #6db3ff; }
+  #flexPanel .foot { font-size: 10px; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Drafting Space <span>· Grids &amp; Walls</span></h1>
+    <div class="sep"></div>
+    <div class="toolbar" id="toolbar">
+      <div class="tool active" data-tool="select" title="Select / move (V)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3l6 16 2-6 6-2z"/></svg>
+        Select
+      </div>
+      <div class="tool" data-tool="product" title="Product boundary (B) — top level">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="14" rx="1"/></svg>
+        Product
+      </div>
+      <div class="tool" data-tool="unitplan" title="Unit Plan boundary (U) — goes inside an open Product">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+        Unit Plan
+      </div>
+      <div class="tool" data-tool="layout" title="Layout boundary (Y) — goes inside an open Unit Plan">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
+        Layout
+      </div>
+      <div class="tool" data-tool="element" title="Element (N) — place a 1×1 element on an intersection/corner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="6" width="12" height="12" fill="currentColor" stroke="none"/><circle cx="12" cy="18" r="2"/></svg>
+        Element
+      </div>
+      <div class="tool" data-tool="grid" title="Draw grid line (G)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h18M3 16h18M8 3v18M16 3v18"/></svg>
+        Grid line
+      </div>
+      <div class="tool" data-tool="dim" title="Dimension (D)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18M3 9v6M21 9v6"/></svg>
+        Dimension
+      </div>
+      <div class="tool" data-tool="lockdim" title="Lock dimension (L) — forces the tagged element to keep this distance">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17h18M3 15v4M21 15v4"/><rect x="9" y="4" width="6" height="5" rx="1"/><path d="M10.5 4V3a1.5 1.5 0 0 1 3 0v1"/></svg>
+        Lock Dim
+      </div>
+      <div class="tool" data-tool="eqdim" title="EQ dimension (E) — forces tagged grids to equal spacing">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h18M3 12v4M21 12v4M9 12v4M15 12v4"/><path d="M6 6h5M6 9h5"/></svg>
+        EQ Dim
+      </div>
+      <div class="tool" data-tool="flexdim" title="Flex dimension (F) — distribute size change across segments by %">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h18M3 12v4M21 12v4M8 12v4M14 12v4"/><path d="M4 6l4 3-4 0z" fill="currentColor"/><path d="M16 6h5"/></svg>
+        Flex Dim
+      </div>
+      <div class="tool" data-tool="wall6" title="Draw 6&quot; wall">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="10" width="18" height="4" rx="1"/></svg>
+        6&quot; Wall
+      </div>
+      <div class="tool" data-tool="wall12" title="Draw 12&quot; wall">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="8" width="18" height="8" rx="1"/></svg>
+        12&quot; Wall
+      </div>
+    </div>
+    <div class="sep"></div>
+    <label class="field" title="Spacing of the background snap grid, in feet">
+      Grid <input id="gridSize" type="number" value="2" min="0.25" step="0.25"> ft
+    </label>
+    <label class="field"><input id="snap" type="checkbox" checked> Snap</label>
+    <div class="sep"></div>
+    <span class="field" title="Show/hide dimensions by the container they were drawn in">Dims:</span>
+    <label class="field" style="color:#3b82f6"><input id="showProductDims" type="checkbox" checked> Product</label>
+    <label class="field" style="color:#10b981"><input id="showUnitplanDims" type="checkbox" checked> Unit</label>
+    <label class="field" style="color:#d946ef"><input id="showLayoutDims" type="checkbox" checked> Layout</label>
+    <div class="spacer"></div>
+    <button class="btn" id="deleteBtn" title="Delete selected (Del)">Delete</button>
+    <button class="btn" id="clearBtn">Clear all</button>
+    <button class="btn" id="fitBtn" title="Reset view (Home)">Fit view</button>
+  </header>
+
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="menu"></div>
+    <div id="flexPanel"></div>
+    <div id="tip">Pick a tool to begin</div>
+    <div id="hud"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const offCanvas = document.createElement('canvas'); // wall-merge compositing layer
+  const offCtx = offCanvas.getContext('2d');
+  let dpr = 1;
+  const stage = document.getElementById('stage');
+
+  // ---- World model ----------------------------------------------------------
+  // World units = feet. 1 foot of model = PPF pixels at scale 1.
+  const PPF = 24; // pixels per foot at zoom 1
+  // Wall thickness (feet) per wall tool. Each wall stores its own thickness.
+  const WALL_THK = { wall6: 6/12, wall12: 12/12 };
+  const state = {
+    tool: 'select',
+    gridSpacing: 2,        // feet
+    snap: true,
+    view: { x: 0, y: 0, scale: 1 }, // pan in px, zoom factor
+    boxes: [],       // {id, x1,y1,x2,y2} feet (normalized)
+    gridlines: [],   // {id, type:'v'|'h', pos} pos in feet (world x for v, world y for h)
+    walls: [],       // {id, a:{x,y}, b:{x,y}}  feet
+    dims: [],        // {id, a:{x,y}, b:{x,y}, off}  feet, off=offset feet
+    elements: [],    // {id, ref:{x,y,xRef,yRef}, rot}  1×1 ft square, ref = insertion point
+    showDims: { product:true, unitplan:true, layout:true }, // dim visibility per container kind
+    selection: null, // {kind, id}
+  };
+  let nextId = 1;
+  const uid = () => nextId++;
+
+  // ---- Transforms -----------------------------------------------------------
+  function w2s(p) { // world feet -> screen px
+    return {
+      x: p.x * PPF * state.view.scale + state.view.x,
+      y: p.y * PPF * state.view.scale + state.view.y
+    };
+  }
+  function s2w(p) { // screen px -> world feet
+    return {
+      x: (p.x - state.view.x) / (PPF * state.view.scale),
+      y: (p.y - state.view.y) / (PPF * state.view.scale)
+    };
+  }
+  const ppfNow = () => PPF * state.view.scale;
+
+  // ---- Resize ---------------------------------------------------------------
+  function resize() {
+    const r = stage.getBoundingClientRect();
+    dpr = window.devicePixelRatio || 1;
+    cv.width = r.width * dpr; cv.height = r.height * dpr;
+    cv.style.width = r.width + 'px'; cv.style.height = r.height + 'px';
+    offCanvas.width = cv.width; offCanvas.height = cv.height;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw();
+  }
+  window.addEventListener('resize', resize);
+
+  // ---- Snapping -------------------------------------------------------------
+  function snapWorld(wp) {
+    if (!state.snap) return { ...wp };
+    let best = { ...wp };
+    const tol = 14 / ppfNow(); // 14px tolerance in feet
+    // snap to gridline intersections / lines first (priority)
+    let sx = null, sy = null, dxBest = tol, dyBest = tol;
+    for (const g of state.gridlines) {
+      const gp = gridPos(g);
+      if (g.type === 'v') { const d = Math.abs(wp.x - gp); if (d < dxBest) { dxBest = d; sx = gp; } }
+      else { const d = Math.abs(wp.y - gp); if (d < dyBest) { dyBest = d; sy = gp; } }
+    }
+    // snap to wall endpoints
+    let epBest = tol, ep = null;
+    for (const wl of state.walls) {
+      for (const e of [wl.a, wl.b]) {
+        const d = Math.hypot(wp.x - e.x, wp.y - e.y);
+        if (d < epBest) { epBest = d; ep = e; }
+      }
+    }
+    if (ep) return { x: ep.x, y: ep.y, snapped: 'endpoint' };
+    // background grid
+    const gs = state.gridSpacing;
+    const gx = Math.round(wp.x / gs) * gs;
+    const gy = Math.round(wp.y / gs) * gs;
+    if (Math.abs(wp.x - gx) < tol && sx === null) sx = gx;
+    if (Math.abs(wp.y - gy) < tol && sy === null) sy = gy;
+    if (sx !== null) best.x = sx;
+    if (sy !== null) best.y = sy;
+    return best;
+  }
+
+  // ---- Geometry helpers -----------------------------------------------------
+  function distToSeg(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const l2 = dx*dx + dy*dy;
+    if (l2 === 0) return Math.hypot(p.x-a.x, p.y-a.y);
+    let t = ((p.x-a.x)*dx + (p.y-a.y)*dy) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x-(a.x+t*dx), p.y-(a.y+t*dy));
+  }
+
+  function hitTest(wp) {
+    const tol = 10 / ppfNow();
+    for (let i=state.elements.length-1;i>=0;i--) {
+      if (pointInElement(wp, state.elements[i])) return { kind:'element', id:state.elements[i].id };
+    }
+    for (const wl of state.walls) {
+      if (distToSeg(wp, endPos(wl.a), endPos(wl.b)) < Math.max(tol, (wl.thickness||0.5)/2))
+        return { kind: 'wall', id: wl.id };
+    }
+    for (const d of state.dims) {
+      const ep = dimLineEndpoints(d);
+      if (ep && distToSeg(wp, ep[0], ep[1]) < tol) return { kind: 'dim', id: d.id };
+    }
+    for (const g of state.gridlines) {
+      const gp = gridPos(g);
+      const bx = g.boxId != null ? findById(state.boxes, g.boxId) : null;
+      const e = bx ? boxExt(bx) : null;
+      if (g.type === 'v' && Math.abs(wp.x - gp) < tol) {
+        if (!e || (wp.y>=e.y1-tol && wp.y<=e.y2+tol)) return { kind: 'grid', id: g.id };
+      }
+      if (g.type === 'h' && Math.abs(wp.y - gp) < tol) {
+        if (!e || (wp.x>=e.x1-tol && wp.x<=e.x2+tol)) return { kind: 'grid', id: g.id };
+      }
+    }
+    // pick the smallest box edge under the cursor so children win over parents
+    let bHit=null, bArea=Infinity;
+    for (const bx of state.boxes) {
+      const e = boxExt(bx);
+      const onV = (Math.abs(wp.x-e.x1)<tol || Math.abs(wp.x-e.x2)<tol) && wp.y>e.y1-tol && wp.y<e.y2+tol;
+      const onH = (Math.abs(wp.y-e.y1)<tol || Math.abs(wp.y-e.y2)<tol) && wp.x>e.x1-tol && wp.x<e.x2+tol;
+      if (onV || onH) { const a=(e.x2-e.x1)*(e.y2-e.y1); if (a<bArea){bArea=a;bHit=bx.id;} }
+    }
+    if (bHit!=null) return { kind:'box', id:bHit };
+    return null;
+  }
+  const findById = (arr, id) => arr.find(o => o.id === id);
+
+  // Effective world extents of a box. Edges can be bound to grid lines (of a
+  // parent box); a bound edge follows that grid line, so the box moves & scales
+  // with the grids it sits on. Unbound edges use the box's own stored coords.
+  function boxExt(bx) {
+    const e = { x1:bx.x1, y1:bx.y1, x2:bx.x2, y2:bx.y2 };
+    if (bx.bind) {
+      for (const k of ['x1','y1','x2','y2']) {
+        const ref = bx.bind[k];
+        if (ref) { const v = resolveRef(ref); if (v != null) e[k] = v; }
+      }
+    }
+    if (e.x1 > e.x2) { const t=e.x1; e.x1=e.x2; e.x2=t; }
+    if (e.y1 > e.y2) { const t=e.y1; e.y1=e.y2; e.y2=t; }
+    return e;
+  }
+
+  // Boundary nesting hierarchy: products hold unit plans hold layouts.
+  const PARENT_KIND = { unitplan:'product', layout:'unitplan' };
+  // Innermost OPEN boundary of the kind that may host `kind`, containing point p.
+  function openHostFor(kind, p, excludeId) {
+    const want = PARENT_KIND[kind];
+    if (!want) return null;
+    let best=null, bestArea=Infinity;
+    for (const b of state.boxes) {
+      if (b.id===excludeId || !b.open || b.kind!==want) continue;
+      const e = boxExt(b);
+      if (p.x>=e.x1 && p.x<=e.x2 && p.y>=e.y1 && p.y<=e.y2) {
+        const area=(e.x2-e.x1)*(e.y2-e.y1);
+        if (area<bestArea){bestArea=area;best=b;}
+      }
+    }
+    return best;
+  }
+  function isBoxAncestor(ancId, box) {
+    let p = box.parentId;
+    while (p != null) { if (p===ancId) return true; const pb=findById(state.boxes,p); p = pb?pb.parentId:null; }
+    return false;
+  }
+  // A boundary is "inactive" (faded) when one of its descendants is open.
+  function boxHasOpenDescendant(box) {
+    return state.boxes.some(b => b!==box && b.open && isBoxAncestor(box.id, b));
+  }
+
+  // Absolute world position (feet) of a grid line. Box-bound lines are stored as
+  // a fraction `t` of the box span, so they move & scale with the box.
+  function gridPos(g) {
+    // A lock/EQ dimension can drive this grid, overriding normal box-fraction scaling.
+    const dr = gridDriver(g.id);
+    if (dr) { const p = driveResolve(dr); if (p != null) return p; }
+    if (g.boxId != null) {
+      const bx = findById(state.boxes, g.boxId);
+      if (bx) { const e = boxExt(bx); return g.type==='v' ? e.x1 + g.t*(e.x2-e.x1) : e.y1 + g.t*(e.y2-e.y1); }
+    }
+    return g.pos;
+  }
+  // The drive-record (if any) by which a lock or EQ dimension constrains a grid.
+  function gridDriver(gid) {
+    for (const d of state.dims) if (d.drives)
+      for (const dr of d.drives) if (dr.gridId===gid) return dr;
+    return null;
+  }
+  // Resolve a drive record to a world coordinate.
+  //   lock: anchorRef + fixed offset.   EQ: interpolation.   flex: %-distributed.
+  function driveResolve(dr) {
+    if (dr.kind==='flex') { const d=findById(state.dims, dr.dimId); return d ? flexGridPos(d, dr.k) : null; }
+    if (dr.offset !== undefined) { const a=resolveRef(dr.anchorRef); return a!=null ? a+dr.offset : null; }
+    if (dr.frac !== undefined) { const a=resolveRef(dr.anchorA), b=resolveRef(dr.anchorB); return (a!=null&&b!=null) ? a+dr.frac*(b-a) : null; }
+    return null;
+  }
+  // Position of the grid at boundary k of a flex dimension. Each segment grows by
+  // its share of the overall span change: segLen_i + (percent_i/Σpercent)·Δspan.
+  function flexGridPos(d, k) {
+    const A = resolveRef(d.firstRef), B = resolveRef(d.lastRef);
+    if (A==null || B==null) return null;
+    const total = (B - A) - d.S0;                  // overall size change since creation
+    const denom = d.percents.reduce((s,p)=>s+p, 0);
+    let cumL=0, cumShare=0;
+    for (let i=0; i<k; i++) {
+      cumL += d.segLens[i];
+      cumShare += denom>0 ? d.percents[i]/denom : 1/d.percents.length;
+    }
+    return A + cumL + cumShare*total;
+  }
+  // The box whose effective extents contain a world point. Returns the innermost
+  // (smallest-area) match so nested boxes resolve correctly.
+  function boxContaining(p, opts={}) {
+    let best=null, bestArea=Infinity;
+    for (const b of state.boxes) {
+      if (opts.openOnly && !b.open) continue;
+      if (opts.exclude===b.id) continue;
+      const e = boxExt(b);
+      if (p.x>=e.x1 && p.x<=e.x2 && p.y>=e.y1 && p.y<=e.y2) {
+        const area = (e.x2-e.x1)*(e.y2-e.y1);
+        if (area < bestArea) { bestArea=area; best=b; }
+      }
+    }
+    return best;
+  }
+
+  // ---- Wall endpoint anchoring ----------------------------------------------
+  // A wall endpoint can be anchored to a reference whose coordinate it follows:
+  //   {type:'grid', id}            → a grid line's position (gridPos)
+  //   {type:'edge', boxId, edge}   → a box edge (x1/x2/y1/y2 from boxExt)
+  // An endpoint has an xRef (vertical feature) and a yRef (horizontal feature);
+  // their intersection is the anchored point. Unset refs fall back to free x/y.
+  let resolveDepth = 0; // guard against accidental circular references
+  function resolveRef(ref) {
+    if (!ref || resolveDepth > 40) return null;
+    resolveDepth++;
+    try {
+      if (ref.type==='grid') { const g=findById(state.gridlines, ref.id); return g ? gridPos(g) : null; }
+      if (ref.type==='edge') { const b=findById(state.boxes, ref.boxId); return b ? boxExt(b)[ref.edge] : null; }
+      return null;
+    } finally { resolveDepth--; }
+  }
+  function endPos(ep) {
+    const x = ep.xRef ? resolveRef(ep.xRef) : null;
+    const y = ep.yRef ? resolveRef(ep.yRef) : null;
+    return { x: x!=null ? x : ep.x, y: y!=null ? y : ep.y };
+  }
+  // Vertical features (give an x): vertical grid lines + box left/right edges.
+  function vFeatures() {
+    const out=[];
+    for (const g of state.gridlines) if (g.type==='v') out.push({coord:gridPos(g), ref:{type:'grid',id:g.id}});
+    for (const b of state.boxes) { const e=boxExt(b);
+      out.push({coord:e.x1, ref:{type:'edge',boxId:b.id,edge:'x1'}});
+      out.push({coord:e.x2, ref:{type:'edge',boxId:b.id,edge:'x2'}});
+    }
+    return out;
+  }
+  // Horizontal features (give a y): horizontal grid lines + box top/bottom edges.
+  function hFeatures() {
+    const out=[];
+    for (const g of state.gridlines) if (g.type==='h') out.push({coord:gridPos(g), ref:{type:'grid',id:g.id}});
+    for (const b of state.boxes) { const e=boxExt(b);
+      out.push({coord:e.y1, ref:{type:'edge',boxId:b.id,edge:'y1'}});
+      out.push({coord:e.y2, ref:{type:'edge',boxId:b.id,edge:'y2'}});
+    }
+    return out;
+  }
+  // Nearest intersection of a vertical & horizontal feature to a world point.
+  // Covers grid×grid, grid×box-edge, and box-edge×box-edge (= box corner).
+  function anchorAt(wp, tol) {
+    const vs=vFeatures(), hs=hFeatures();
+    let best=null, bestD=tol;
+    for (const v of vs) for (const h of hs) {
+      const d=Math.hypot(wp.x-v.coord, wp.y-h.coord);
+      if (d<bestD) { bestD=d; best={x:v.coord, y:h.coord, xRef:v.ref, yRef:h.ref}; }
+    }
+    return best;
+  }
+  // Snap a wall endpoint: prefer an anchored intersection, then existing wall
+  // endpoints, then the background grid. Returns an endpoint {x,y,xRef?,yRef?}.
+  function wallSnap(wp) {
+    if (!state.snap) return { x:wp.x, y:wp.y, xRef:null, yRef:null };
+    const tol = 14 / ppfNow();
+    const a = anchorAt(wp, tol);
+    if (a) return a;
+    let epBest=tol, ep=null;
+    for (const wl of state.walls) for (const e of [wl.a, wl.b]) {
+      const p=endPos(e); const d=Math.hypot(wp.x-p.x, wp.y-p.y);
+      if (d<epBest) { epBest=d; ep=p; }
+    }
+    if (ep) return { x:ep.x, y:ep.y, xRef:null, yRef:null };
+    const s = snapWorld(wp);
+    return { x:s.x, y:s.y, xRef:null, yRef:null };
+  }
+  function bakeWallEnd(ep) { const p=endPos(ep); ep.x=p.x; ep.y=p.y; ep.xRef=null; ep.yRef=null; }
+  function reanchorWall(wl) {
+    const tol = 14 / ppfNow();
+    for (const ep of [wl.a, wl.b]) {
+      const p = endPos(ep);
+      const a = anchorAt(p, tol);
+      if (a) { ep.x=a.x; ep.y=a.y; ep.xRef=a.xRef; ep.yRef=a.yRef; }
+      else { ep.x=p.x; ep.y=p.y; ep.xRef=null; ep.yRef=null; }
+    }
+  }
+
+  function nearestFeature(val, arr, tol) {
+    let best=null, bestD=tol;
+    for (const f of arr) { const d=Math.abs(val-f.coord); if (d<bestD){bestD=d;best=f;} }
+    return best;
+  }
+  // Pick a dimension reference (grid line OR box edge) near a world point.
+  // `axis` constrains orientation once a string is started ('h' uses vertical
+  // features, 'v' uses horizontal features). Returns {axis, ref, coord, perp}.
+  function pickReference(wp, axis) {
+    const tol = 12 / ppfNow();
+    const cands = [];
+    if (axis==null || axis==='h')
+      for (const f of vFeatures()) cands.push({ d:Math.abs(wp.x-f.coord), axis:'h', ref:f.ref, coord:f.coord, perp:wp.y });
+    if (axis==null || axis==='v')
+      for (const f of hFeatures()) cands.push({ d:Math.abs(wp.y-f.coord), axis:'v', ref:f.ref, coord:f.coord, perp:wp.x });
+    cands.sort((a,b)=>a.d-b.d);
+    return (cands[0] && cands[0].d < tol) ? cands[0] : null;
+  }
+  const sameRef = (a,b) => a && b && a.type===b.type &&
+    (a.type==='grid' ? a.id===b.id : (a.boxId===b.boxId && a.edge===b.edge));
+
+  // ---- Bounding box helpers -------------------------------------------------
+  function boxCornerAt(bx, sp) {
+    const e = boxExt(bx);
+    const corners = {
+      tl:w2s({x:e.x1,y:e.y1}), tr:w2s({x:e.x2,y:e.y1}),
+      bl:w2s({x:e.x1,y:e.y2}), br:w2s({x:e.x2,y:e.y2})
+    };
+    for (const k in corners) {
+      if (Math.hypot(sp.x-corners[k].x, sp.y-corners[k].y) < 8) return k;
+    }
+    return null;
+  }
+  // The innermost boundary whose corner is under the screen point (for resize).
+  function boxCornerUnder(sp) {
+    let best=null, bestArea=Infinity;
+    for (const b of state.boxes) {
+      const corner = boxCornerAt(b, sp);
+      if (corner) {
+        const e=boxExt(b), area=(e.x2-e.x1)*(e.y2-e.y1);
+        if (area<bestArea) { bestArea=area; best={box:b, corner}; }
+      }
+    }
+    return best;
+  }
+  function resizeBox(drag, cur) {
+    const bx = findById(state.boxes, drag.id);
+    if (!bx.bind) bx.bind = {x1:null,y1:null,x2:null,y2:null};
+    // manual resize detaches the dragged edges from any grid binding
+    if (drag.corner.includes('l')) { bx.x1 = cur.x; bx.bind.x1=null; } else { bx.x2 = cur.x; bx.bind.x2=null; }
+    if (drag.corner.includes('t')) { bx.y1 = cur.y; bx.bind.y1=null; } else { bx.y2 = cur.y; bx.bind.y2=null; }
+  }
+  function normalizeBox(bx) {
+    if (bx.x1 > bx.x2) { const t=bx.x1; bx.x1=bx.x2; bx.x2=t; }
+    if (bx.y1 > bx.y2) { const t=bx.y1; bx.y1=bx.y2; bx.y2=t; }
+  }
+  // Bake current effective extents into the free coords and drop all bindings,
+  // so a box can be moved freely. Used when a drag starts.
+  function bakeBox(bx) {
+    const e = boxExt(bx);
+    bx.x1=e.x1; bx.y1=e.y1; bx.x2=e.x2; bx.y2=e.y2;
+    bx.bind = {x1:null,y1:null,x2:null,y2:null};
+  }
+  // Vertical/horizontal snap features offered by a host box: its own edges plus
+  // the grid lines that belong to it. A child edge locks onto one of these, so
+  // child corners lock to grid intersections, the host's edges, and its corners.
+  function hostVFeatures(host) {
+    const e = boxExt(host);
+    const out = [
+      { coord:e.x1, ref:{type:'edge',boxId:host.id,edge:'x1'} },
+      { coord:e.x2, ref:{type:'edge',boxId:host.id,edge:'x2'} },
+    ];
+    for (const g of state.gridlines) if (g.boxId===host.id && g.type==='v') out.push({coord:gridPos(g), ref:{type:'grid',id:g.id}});
+    return out;
+  }
+  function hostHFeatures(host) {
+    const e = boxExt(host);
+    const out = [
+      { coord:e.y1, ref:{type:'edge',boxId:host.id,edge:'y1'} },
+      { coord:e.y2, ref:{type:'edge',boxId:host.id,edge:'y2'} },
+    ];
+    for (const g of state.gridlines) if (g.boxId===host.id && g.type==='h') out.push({coord:gridPos(g), ref:{type:'grid',id:g.id}});
+    return out;
+  }
+  // After a box is dropped, lock each edge to a nearby feature of the open box
+  // that contains it. Bound edges then track those features (move & scale).
+  function rebindBox(bx) {
+    const e = boxExt(bx);
+    const center = { x:(e.x1+e.x2)/2, y:(e.y1+e.y2)/2 };
+    const host = openHostFor(bx.kind, center, bx.id);
+    if (!host) { bx.parentId=null; bx.bind={x1:null,y1:null,x2:null,y2:null}; return; }
+    bx.parentId = host.id;
+    const tol = 16 / ppfNow();
+    const vf = hostVFeatures(host), hf = hostHFeatures(host);
+    const near = (val, arr) => {
+      let best=null, bestD=tol;
+      for (const f of arr) { const d=Math.abs(val-f.coord); if (d<bestD){bestD=d;best=f;} }
+      return best;
+    };
+    const l=near(e.x1,vf), r=near(e.x2,vf), t=near(e.y1,hf), b=near(e.y2,hf);
+    bx.bind = { x1:l?l.ref:null, x2:r?r.ref:null, y1:t?t.ref:null, y2:b?b.ref:null };
+  }
+  // After resizing, lock the dragged edge(s) onto a parent grid/edge they landed
+  // on (or leave free if dropped away from one). Uses the box's existing parent
+  // so it works whether or not the parent is currently open.
+  function rebindResizedEdges(bx, edges) {
+    const parent = bx.parentId!=null ? findById(state.boxes, bx.parentId) : null;
+    if (!parent) return; // top-level products have no parent grids to lock to
+    if (!bx.bind) bx.bind={x1:null,y1:null,x2:null,y2:null};
+    const tol = 14 / ppfNow();
+    const vf = hostVFeatures(parent), hf = hostHFeatures(parent);
+    const e = boxExt(bx);
+    const near = (val, arr) => { let best=null, bd=tol; for (const f of arr){ const d=Math.abs(val-f.coord); if(d<bd){bd=d;best=f;} } return best; };
+    for (const k of edges) {
+      const f = near(e[k], (k==='x1'||k==='x2') ? vf : hf);
+      bx.bind[k] = f ? f.ref : null;
+    }
+  }
+
+  // ---- Drawing --------------------------------------------------------------
+  function fmtFeet(ft) {
+    const sign = ft < 0 ? '-' : '';
+    ft = Math.abs(ft);
+    let whole = Math.floor(ft);
+    let inches = Math.round((ft - whole) * 12);
+    if (inches === 12) { whole += 1; inches = 0; }
+    return `${sign}${whole}'-${inches}"`;
+  }
+
+  function draw() {
+    const w = cv.clientWidth, h = cv.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+    drawBackgroundGrid(w, h);
+    drawWalls();          // walls render first, beneath everything
+    drawGridlines(w, h);
+    drawDims();
+    drawElements();       // elements (dimmed if outside the focus)
+    drawDimming();        // dim content outside open boundaries
+    drawBoxes();          // boundary frames crisp on top of the dimming; selected/hover frontmost
+    drawHoverHighlight(); // hovered/Tab-cycled container on the very top
+    drawPreview();
+    updateHud();
+    updateFlexPanel();
+    updateToolAvailability();
+  }
+
+  function drawBackgroundGrid(w, h) {
+    const gs = state.gridSpacing;
+    const step = gs * ppfNow();
+    if (step < 6) return; // too dense to show
+    const tl = s2w({ x: 0, y: 0 });
+    const br = s2w({ x: w, y: h });
+    ctx.lineWidth = 1;
+    const startX = Math.floor(tl.x / gs) * gs;
+    const startY = Math.floor(tl.y / gs) * gs;
+    for (let xf = startX; xf <= br.x; xf += gs) {
+      const sx = w2s({ x: xf, y: 0 }).x;
+      const major = Math.abs(xf % (gs*5)) < 1e-6;
+      ctx.strokeStyle = major ? 'rgba(120,135,160,.30)' : 'rgba(120,135,160,.13)';
+      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
+    }
+    for (let yf = startY; yf <= br.y; yf += gs) {
+      const sy = w2s({ x: 0, y: yf }).y;
+      const major = Math.abs(yf % (gs*5)) < 1e-6;
+      ctx.strokeStyle = major ? 'rgba(120,135,160,.30)' : 'rgba(120,135,160,.13)';
+      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
+    }
+    // origin marker
+    const o = w2s({ x: 0, y: 0 });
+    ctx.strokeStyle = 'rgba(255,120,120,.5)';
+    ctx.beginPath(); ctx.moveTo(o.x-7,o.y); ctx.lineTo(o.x+7,o.y);
+    ctx.moveTo(o.x,o.y-7); ctx.lineTo(o.x,o.y+7); ctx.stroke();
+  }
+
+  // Per-kind boundary outline color (closed). Open boundaries are red for all.
+  const BOUNDARY_HUE = { product:217, unitplan:160, layout:292 };
+  // Per-instance color: same base hue per kind, but sibling boxes vary in hue &
+  // lightness so multiple layouts (or unit plans / products) are distinguishable.
+  function boundaryColor(bx) {
+    const hue = BOUNDARY_HUE[bx.kind] ?? 217;
+    const sib = state.boxes.filter(b=>b.kind===bx.kind).sort((a,b)=>a.id-b.id);
+    const i = Math.max(0, sib.findIndex(b=>b.id===bx.id));
+    const h = hue + ((i*31)%30) - 15;     // ±15° hue spread
+    const l = 48 + ((i*19)%34);           // 48–82% lightness
+    return `hsl(${h}, 68%, ${l}%)`;
+  }
+  // Draw boundary frames (no fill). Only the active (deepest-open) container is
+  // red; the selected/hovered box draws frontmost — on top of even the red frame.
+  function drawBoxes() {
+    const order = { layout:0, unitplan:1, product:2 };
+    const selId = (state.selection && state.selection.kind==='box') ? state.selection.id : null;
+    const ht = activeHover();
+    const hoverBoxId = (ht && ht.kind==='box') ? ht.id : null;
+    const active = activeContainer();
+    const activeId = active ? active.id : null;
+    const z = b => (b.id===hoverBoxId) ? 1001 : (b.id===selId) ? 1000 : (order[b.kind]??2);
+    const sorted = [...state.boxes].sort((a,b)=>z(a)-z(b));
+    for (const bx of sorted) {
+      const sel = bx.id===selId, hov = bx.id===hoverBoxId;
+      const e = boxExt(bx);
+      const p1 = w2s({x:e.x1,y:e.y1}), p2 = w2s({x:e.x2,y:e.y2});
+      const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y);
+      const ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
+      const col = hov ? '#ffd54a' : (bx.id===activeId ? '#ff5c5c' : boundaryColor(bx));
+      ctx.setLineDash([]);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = (bx.id===activeId) ? 2.5 : (hov||sel ? 2.2 : 1.4);
+      ctx.strokeRect(x,y,ww,hh);
+      if (sel || hov) {
+        ctx.fillStyle = col;
+        for (const cn of [[x,y],[x+ww,y],[x,y+hh],[x+ww,y+hh]]) ctx.fillRect(cn[0]-4,cn[1]-4,8,8);
+      }
+    }
+  }
+
+  // Dim content outside each open boundary with a 25% white overlay; overlays
+  // stack so the deepest-open boundary's interior is the brightest (the focus).
+  function drawDimming() {
+    const opens = state.boxes.filter(b=>b.open);
+    if (!opens.length) return;
+    const W=cv.clientWidth, H=cv.clientHeight;
+    for (const b of opens) {
+      const e=boxExt(b), p1=w2s({x:e.x1,y:e.y1}), p2=w2s({x:e.x2,y:e.y2});
+      const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y), ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
+      ctx.beginPath(); ctx.rect(0,0,W,H); ctx.rect(x,y,ww,hh);
+      ctx.fillStyle='rgba(255,255,255,.25)'; ctx.fill('evenodd');
+    }
+  }
+
+  // The hovered / Tab-cycled container drawn on top of EVERYTHING (including the
+  // red open frames) so cycling clearly brings it to the front.
+  function drawHoverHighlight() {
+    const ht = activeHover();
+    if (!ht) return;
+    ctx.setLineDash([]); ctx.strokeStyle='#ffd54a'; ctx.lineWidth=3;
+    if (ht.kind==='box') {
+      const b=findById(state.boxes, ht.id); if (!b) return;
+      const e=boxExt(b), p1=w2s({x:e.x1,y:e.y1}), p2=w2s({x:e.x2,y:e.y2});
+      const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y), ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
+      ctx.strokeRect(x,y,ww,hh);
+      ctx.fillStyle='#ffd54a';
+      for (const cn of [[x,y],[x+ww,y],[x,y+hh],[x+ww,y+hh]]) ctx.fillRect(cn[0]-4,cn[1]-4,8,8);
+    } else if (ht.kind==='element') {
+      const el=findById(state.elements, ht.id); if (!el) return;
+      const cs=elementCorners(el).map(w2s);
+      ctx.beginPath(); ctx.moveTo(cs[0].x,cs[0].y);
+      for (let i=1;i<cs.length;i++) ctx.lineTo(cs[i].x,cs[i].y);
+      ctx.closePath(); ctx.stroke();
+    }
+  }
+
+  // ---- Elements -------------------------------------------------------------
+  // 1×1 ft solid square whose insertion point sits at the middle of one side.
+  // Local geometry (insertion at origin, square extends +y), rotated by el.rot.
+  function elementCorners(el) {
+    const P = endPos(el.ref);
+    const a = (el.rot||0) * Math.PI/180, ca=Math.cos(a), sa=Math.sin(a);
+    return [[-0.5,0],[0.5,0],[0.5,1],[-0.5,1]].map(([lx,ly])=>({
+      x: P.x + lx*ca - ly*sa,
+      y: P.y + lx*sa + ly*ca
+    }));
+  }
+  function drawElements() {
+    const ht = activeHover();
+    const hoverElId = (ht && ht.kind==='element') ? ht.id : null;
+    for (const el of state.elements) {
+      const sel = state.selection && state.selection.kind==='element' && state.selection.id===el.id;
+      const hov = el.id===hoverElId;
+      const cs = elementCorners(el).map(w2s);
+      ctx.beginPath();
+      ctx.moveTo(cs[0].x,cs[0].y);
+      for (let i=1;i<cs.length;i++) ctx.lineTo(cs[i].x,cs[i].y);
+      ctx.closePath();
+      ctx.fillStyle = sel ? '#9ec5ff' : '#c2c8d2';
+      ctx.fill();
+      ctx.strokeStyle = hov ? '#ffd54a' : (sel ? '#4c9aff' : '#6b7280');
+      ctx.lineWidth = hov ? 3 : (sel ? 1.8 : 1);
+      ctx.stroke();
+      // insertion / reference point (middle of a side)
+      const P = w2s(endPos(el.ref));
+      ctx.fillStyle = sel ? '#4c9aff' : '#1e2128';
+      ctx.beginPath(); ctx.arc(P.x,P.y,3.5,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='#e6e9ef'; ctx.lineWidth=1; ctx.stroke();
+    }
+  }
+  function pointInElement(wp, el) {
+    const c = elementCorners(el);
+    let inside=false;
+    for (let i=0,j=c.length-1;i<c.length;j=i++) {
+      if (((c[i].y>wp.y)!==(c[j].y>wp.y)) &&
+          (wp.x < (c[j].x-c[i].x)*(wp.y-c[i].y)/(c[j].y-c[i].y)+c[i].x)) inside=!inside;
+    }
+    return inside;
+  }
+  // Place an element: its insertion point snaps to an intersection (grid×grid,
+  // grid×boundary-edge) or a boundary corner.
+  function placeElement(wp) {
+    const a = anchorAt(wp, 16/ppfNow());
+    if (!a) return;
+    const id = uid();
+    state.elements.push({ id, ref:{ x:a.x, y:a.y, xRef:a.xRef, yRef:a.yRef }, rot:0 });
+    state.selection = { kind:'element', id };
+  }
+
+  function drawGridlines(w, h) {
+    const ht = activeHover();
+    const hoverGridId = (ht && ht.kind==='grid') ? ht.id : null;
+    for (const g of state.gridlines) {
+      const sel = state.selection && state.selection.kind==='grid' && state.selection.id===g.id;
+      const hov = g.id===hoverGridId;
+      const gbx = g.boxId!=null ? findById(state.boxes, g.boxId) : null;
+      const base = gbx ? boundaryColor(gbx) : '#5b86c4'; // match the container's color
+      ctx.strokeStyle = hov ? '#ffd54a' : (sel ? '#9ec5ff' : base);
+      ctx.lineWidth = hov ? 2.5 : (sel ? 2 : 1.3);
+      ctx.setLineDash([7, 5]);
+      const gp = gridPos(g);
+      if (g.boxId != null) {
+        // bound to a box → render across that box only, scales/moves with it
+        const bx = findById(state.boxes, g.boxId);
+        if (!bx) { ctx.setLineDash([]); continue; }
+        const e = boxExt(bx);
+        ctx.beginPath();
+        if (g.type === 'v') { const a=w2s({x:gp,y:e.y1}), b=w2s({x:gp,y:e.y2}); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+        else { const a=w2s({x:e.x1,y:gp}), b=w2s({x:e.x2,y:gp}); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+        ctx.stroke();
+      } else {
+        // free line (not in any box) → span the whole sheet
+        ctx.beginPath();
+        if (g.type === 'v') { const x = w2s({x:gp,y:0}).x; ctx.moveTo(x,0); ctx.lineTo(x,h); }
+        else { const y = w2s({x:0,y:gp}).y; ctx.moveTo(0,y); ctx.lineTo(w,y); }
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+  }
+
+  // Walls render as the OUTLINE of their merged union, so intersections (L, T,
+  // cross) join cleanly with no interior junction lines, while the interior
+  // stays transparent. Done on an offscreen layer: fill every wall rectangle,
+  // then punch out each rectangle's inset — what remains is the union outline.
+  // Is this wall's endpoint joined to another wall (shared corner, or landing on
+  // another wall's body for a T/cross)? Such ends get extended so the union fills
+  // the outer corner instead of leaving a notch.
+  function wallEndJoined(wall, P) {
+    for (const o of state.walls) {
+      if (o===wall) continue;
+      const oa=endPos(o.a), ob=endPos(o.b);
+      if (Math.hypot(P.x-oa.x,P.y-oa.y)<0.05 || Math.hypot(P.x-ob.x,P.y-ob.y)<0.05) return true;
+      if (distToSeg(P, oa, ob) < 0.05) return true;
+    }
+    return false;
+  }
+
+  function drawWalls() {
+    if (!state.walls.length) return;
+    const T = 1.3; // outline thickness (px)
+    const rects = state.walls.map(wl=>{
+      let aW=endPos(wl.a), bW=endPos(wl.b);
+      const H=(wl.thickness||0.5)/2;                 // half-thickness in feet
+      const dx=bW.x-aW.x, dy=bW.y-aW.y, L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L;
+      // extend joined ends by H so the outer corner is fully covered & merged
+      if (wallEndJoined(wl, aW)) aW={x:aW.x-ux*H, y:aW.y-uy*H};
+      if (wallEndJoined(wl, bW)) bW={x:bW.x+ux*H, y:bW.y+uy*H};
+      const A=w2s(aW), B=w2s(bW);
+      const Hpx=Math.max(1.4, (wl.thickness||0.5)*ppfNow()/2);
+      return { A, B, H:Hpx };
+    });
+    offCtx.setTransform(dpr,0,0,dpr,0,0);
+    offCtx.clearRect(0,0,cv.clientWidth,cv.clientHeight);
+    offCtx.globalCompositeOperation='source-over';
+    // 1) union outline base: fill every wall rectangle with the outline color
+    offCtx.fillStyle='#5b6472';
+    for (const r of rects) fillWallRect(offCtx, r.A, r.B, r.H);
+    // 2) white body: fill each rectangle's inset white, leaving the union outline
+    offCtx.fillStyle='#ffffff';
+    for (const r of rects) {
+      const dx=r.B.x-r.A.x, dy=r.B.y-r.A.y, L=Math.hypot(dx,dy)||1;
+      if (r.H-T <= 0.2 || L-2*T <= 0.2) continue; // too thin/short to hollow out
+      const ux=dx/L, uy=dy/L;
+      const Ai={x:r.A.x+ux*T, y:r.A.y+uy*T}, Bi={x:r.B.x-ux*T, y:r.B.y-uy*T};
+      fillWallRect(offCtx, Ai, Bi, r.H-T);
+    }
+    // blit the merged white-filled walls onto the main canvas (device pixels, 1:1)
+    ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.drawImage(offCanvas,0,0); ctx.restore();
+    // selection highlight (drawn normally on top)
+    for (const wl of state.walls) {
+      if (state.selection && state.selection.kind==='wall' && state.selection.id===wl.id) {
+        const a=w2s(endPos(wl.a)), b=w2s(endPos(wl.b));
+        const thkPx=Math.max(2.8,(wl.thickness||0.5)*ppfNow());
+        ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1.6; ctx.lineJoin='miter'; ctx.lineCap='butt';
+        strokeWallRect(a, b, thkPx);
+      }
+    }
+  }
+
+  // Fill a wall rectangle (centerline a→b, half-thickness H) on the given context.
+  function fillWallRect(c, A, B, H) {
+    const dx=B.x-A.x, dy=B.y-A.y, L=Math.hypot(dx,dy)||1;
+    const nx=-dy/L*H, ny=dx/L*H;
+    c.beginPath();
+    c.moveTo(A.x+nx,A.y+ny);
+    c.lineTo(B.x+nx,B.y+ny);
+    c.lineTo(B.x-nx,B.y-ny);
+    c.lineTo(A.x-nx,A.y-ny);
+    c.closePath();
+    c.fill();
+  }
+
+  // Outline of a wall as a closed rectangle (two long edges + square end caps).
+  function strokeWallRect(a, b, thkPx) {
+    const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1;
+    const nx=-dy/len*thkPx/2, ny=dx/len*thkPx/2;
+    ctx.beginPath();
+    ctx.moveTo(a.x+nx,a.y+ny);
+    ctx.lineTo(b.x+nx,b.y+ny);
+    ctx.lineTo(b.x-nx,b.y-ny);
+    ctx.lineTo(a.x-nx,a.y-ny);
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  // Dimension model: { id, axis:'h'|'v', refs:[ref...], line }
+  //   axis 'h' → horizontal dimension; refs are vertical features (resolve to x); line = y of the dim line.
+  //   axis 'v' → vertical dimension;   refs are horizontal features (resolve to y); line = x of the dim line.
+  function drawDims() {
+    for (const d of state.dims) {
+      if (d.container && !state.showDims[d.container]) continue; // hidden by toggle
+      drawDimSpec(d, false,
+        state.selection && state.selection.kind==='dim' && state.selection.id===d.id, null);
+    }
+  }
+
+  function drawDimSpec(spec, preview, sel, liveCoord) {
+    let coords = spec.refs.map(resolveRef).filter(v=>v!=null);
+    if (liveCoord!=null) coords = coords.concat([liveCoord]);
+    if (coords.length < 1) return;
+    const eq = !!spec.eq;
+    const flex = !eq && !!spec.flex;
+    const lock = !eq && !flex && !!(spec.locked || spec.lock);
+    // dims take the color of the container they were drawn in; fall back to the
+    // dimension-type color (eq teal / flex blue / lock purple / plain amber)
+    const cBox = spec.containerId!=null ? findById(state.boxes, spec.containerId) : null;
+    const cc = cBox ? boundaryColor(cBox) : null;
+    const base = cc || (eq ? '#3fd6c0' : flex ? '#6db3ff' : (lock ? '#c08cff' : '#ffb454'));
+    const selC = cc || (eq ? '#9defe0' : flex ? '#b6d8ff' : (lock ? '#dcc2ff' : '#ffd591'));
+    const color = sel ? selC : base;
+    // for flex, show the segment's % allotment next to the length
+    const pct = (i) => (spec.percents && spec.percents[i]!=null) ? ` · ${spec.percents[i]}%` : '';
+    const label = (seg,i) => eq ? `EQ (${fmtFeet(seg)})` : flex ? fmtFeet(seg)+pct(i) : (lock?'🔒 ':'') + fmtFeet(seg);
+    ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=1.2; ctx.setLineDash([]);
+    const sorted = [...coords].sort((a,b)=>a-b);
+    if (spec.axis==='h') {
+      const yL = w2s({x:0,y:spec.line}).y;
+      const sx = sorted.map(c=>w2s({x:c,y:spec.line}).x);
+      if (sorted.length>=2) { ctx.beginPath(); ctx.moveTo(sx[0],yL); ctx.lineTo(sx[sx.length-1],yL); ctx.stroke(); }
+      for (const x of sx) { ctx.beginPath(); ctx.moveTo(x,yL-9); ctx.lineTo(x,yL+9); ctx.stroke(); }
+      for (let i=0;i<sorted.length-1;i++) dimText((sx[i]+sx[i+1])/2, yL, label(sorted[i+1]-sorted[i], i), 0, color);
+    } else {
+      const xL = w2s({x:spec.line,y:0}).x;
+      const sy = sorted.map(c=>w2s({x:spec.line,y:c}).y);
+      if (sorted.length>=2) { ctx.beginPath(); ctx.moveTo(xL,sy[0]); ctx.lineTo(xL,sy[sy.length-1]); ctx.stroke(); }
+      for (const y of sy) { ctx.beginPath(); ctx.moveTo(xL-9,y); ctx.lineTo(xL+9,y); ctx.stroke(); }
+      for (let i=0;i<sorted.length-1;i++) dimText(xL, (sy[i]+sy[i+1])/2, label(sorted[i+1]-sorted[i], i), -Math.PI/2, color);
+    }
+  }
+
+  function dimText(mx, my, txt, ang, color) {
+    ctx.save(); ctx.translate(mx,my); ctx.rotate(ang);
+    ctx.font='600 12px Segoe UI, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='bottom';
+    const tw=ctx.measureText(txt).width;
+    ctx.fillStyle='#1e2128'; ctx.fillRect(-tw/2-3,-15,tw+6,14);
+    ctx.fillStyle = color;
+    ctx.fillText(txt, 0, -2);
+    ctx.restore();
+  }
+
+  // Endpoints (world coords) of a dimension's line, for hit-testing & fit.
+  function dimLineEndpoints(d) {
+    const coords = d.refs.map(resolveRef).filter(v=>v!=null);
+    if (coords.length<2) return null;
+    const lo=Math.min(...coords), hi=Math.max(...coords);
+    return d.axis==='h'
+      ? [{x:lo,y:d.line},{x:hi,y:d.line}]
+      : [{x:d.line,y:lo},{x:d.line,y:hi}];
+  }
+
+  // ---- Interaction ----------------------------------------------------------
+  let drag = null;     // active operation
+  let mouse = { x:0, y:0 };     // screen
+  let mouseW = { x:0, y:0 };    // world snapped
+  let mouseWRaw = { x:0, y:0 };
+  let panning = null;
+  let dimBuild = null;          // in-progress dimension string {axis, refs:[], line}
+  let hoverList = [];           // overlapping containers under the cursor (topmost first)
+  let hoverIdx = 0;             // which one is highlighted (Tab cycles)
+  const hoverTarget = () => hoverList[hoverIdx] || null;
+  const activeHover = () => (state.tool==='select' && !drag) ? hoverTarget() : null;
+
+  // Containers (boundaries by edge, elements by body) under a screen point,
+  // ordered topmost-first (elements, then product, unit plan, layout).
+  function boxEdgeUnder(b, wp, tol) {
+    const e=boxExt(b);
+    const onV=(Math.abs(wp.x-e.x1)<tol||Math.abs(wp.x-e.x2)<tol)&&wp.y>e.y1-tol&&wp.y<e.y2+tol;
+    const onH=(Math.abs(wp.y-e.y1)<tol||Math.abs(wp.y-e.y2)<tol)&&wp.x>e.x1-tol&&wp.x<e.x2+tol;
+    return onV||onH;
+  }
+  function hoverCandidatesAt(sp) {
+    const wp=s2w(sp), tol=10/ppfNow();
+    const cands=[];
+    for (const el of state.elements) if (pointInElement(wp,el)) cands.push({kind:'element', id:el.id, z:3});
+    const zk={layout:0,unitplan:1,product:2};
+    for (const b of state.boxes) if (boxEdgeUnder(b,wp,tol)) cands.push({kind:'box', id:b.id, z:(zk[b.kind]??2)});
+    // grid lines cycle last (after all containers) — but a wall under the cursor
+    // keeps priority, so walls drawn along a grid stay selectable
+    const wallUnder = state.walls.some(wl => distToSeg(wp, endPos(wl.a), endPos(wl.b)) < Math.max(tol,(wl.thickness||0.5)/2));
+    if (!wallUnder) for (const g of state.gridlines) {
+      const gp=gridPos(g);
+      const bx = g.boxId!=null ? findById(state.boxes,g.boxId) : null;
+      const e = bx ? boxExt(bx) : null;
+      const on = g.type==='v'
+        ? (Math.abs(wp.x-gp)<tol && (!e || (wp.y>=e.y1-tol && wp.y<=e.y2+tol)))
+        : (Math.abs(wp.y-gp)<tol && (!e || (wp.x>=e.x1-tol && wp.x<=e.x2+tol)));
+      if (on) cands.push({kind:'grid', id:g.id, z:-1});
+    }
+    cands.sort((a,b)=>b.z-a.z);
+    return cands.map(c=>({kind:c.kind, id:c.id}));
+  }
+  const hoverKey = list => list.map(c=>c.kind+c.id).join(',');
+  function refreshHover(sp) {
+    const cands = (state.tool==='select' && !drag) ? hoverCandidatesAt(sp) : [];
+    if (hoverKey(cands) !== hoverKey(hoverList)) { hoverList = cands; hoverIdx = 0; }
+  }
+
+  function getScreen(e) {
+    const r = cv.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  stage.addEventListener('mousedown', (e) => {
+    const sp = getScreen(e);
+    hideBoxMenu();
+    // Right-click over an element or box → let the context menu handle it (don't pan)
+    if (e.button === 2 && (hitTest(s2w(sp))?.kind==='element' || boxContaining(s2w(sp)))) return;
+    // Pan: middle mouse or space-drag or right button
+    if (e.button === 1 || e.button === 2 || (e.button===0 && spaceDown)) {
+      panning = { sx: sp.x, sy: sp.y, vx: state.view.x, vy: state.view.y };
+      stage.style.cursor='grabbing';
+      e.preventDefault();
+      return;
+    }
+    if (e.button !== 0) return;
+    const wp = s2w(sp);
+    const snapped = snapWorld(wp);
+
+    if (state.tool === 'select') {
+      let hit = activeHover();   // the highlighted (hovered / Tab-cycled) target
+      if (hit) {
+        // clicking the highlighted container/grid selects it (and brings boxes to front);
+        // a click on a hovered box's corner resizes it
+        if (hit.kind==='box') {
+          const bx = findById(state.boxes, hit.id);
+          const corner = boxCornerAt(bx, sp);
+          if (corner) {
+            state.selection = { kind:'box', id:bx.id };
+            drag = { kind:'resizeBox', id:bx.id, corner };
+            draw(); return;
+          }
+        }
+      } else {
+        // no highlight → direct hit-test, with boundary-corner resize preference
+        hit = hitTest(wp);
+        const cornerHit = boxCornerUnder(sp);
+        const wallFirst = hit && hit.kind==='wall' && state.selection
+          && state.selection.kind==='wall' && state.selection.id===hit.id;
+        if (cornerHit && !wallFirst) {
+          state.selection = { kind:'box', id:cornerHit.box.id };
+          drag = { kind:'resizeBox', id:cornerHit.box.id, corner:cornerHit.corner };
+          draw(); return;
+        }
+      }
+      state.selection = hit;
+      if (hit) {
+        drag = { kind:'move', hit, start: snapped, orig: cloneEntity(hit) };
+        // capture the box's current effective extent; it is baked into free
+        // coords on first movement, then re-bound to grids on drop
+        if (hit.kind==='box') drag.startExt = boxExt(findById(state.boxes, hit.id));
+        if (hit.kind==='wall') { const wl=findById(state.walls, hit.id); drag.startA=endPos(wl.a); drag.startB=endPos(wl.b); }
+        if (hit.kind==='dim') { drag.origLine = findById(state.dims, hit.id).line; }
+        if (hit.kind==='element') { drag.startP = endPos(findById(state.elements, hit.id).ref); }
+      }
+      draw();
+      return;
+    }
+    if (state.tool === 'product' || state.tool === 'unitplan' || state.tool === 'layout') {
+      drag = { kind:'box', boxKind:state.tool, x1:snapped.x, y1:snapped.y, x2:snapped.x, y2:snapped.y };
+    } else if (state.tool === 'element') {
+      placeElement(wp);
+    } else if (state.tool === 'grid') {
+      drag = { kind:'grid', start: snapped };
+    } else if (state.tool === 'wall6' || state.tool === 'wall12') {
+      const ep = wallSnap(wp);
+      drag = { kind:'wall', a: ep, b: {...ep}, thickness: WALL_THK[state.tool] };
+    } else if (state.tool === 'dim' || state.tool === 'lockdim' || state.tool === 'eqdim' || state.tool === 'flexdim') {
+      // Click picks a reference (grid line or box edge). Build a chain; Enter commits.
+      const pick = pickReference(wp, dimBuild ? dimBuild.axis : null);
+      if (pick) {
+        if (!dimBuild) dimBuild = { axis:pick.axis, refs:[pick.ref], line:pick.perp,
+          lock:(state.tool==='lockdim'), eq:(state.tool==='eqdim'), flex:(state.tool==='flexdim') };
+        else if (!dimBuild.refs.some(r=>sameRef(r,pick.ref))) dimBuild.refs.push(pick.ref);
+      }
+    }
+    draw();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    const sp = getScreen(e);
+    mouse = sp;
+    if (panning) {
+      state.view.x = panning.vx + (sp.x - panning.sx);
+      state.view.y = panning.vy + (sp.y - panning.sy);
+      draw();
+      return;
+    }
+    mouseWRaw = s2w(sp);
+    mouseW = snapWorld(mouseWRaw);
+    if (drag) {
+      if (drag.kind === 'wall') drag.b = wallSnap(mouseWRaw);
+      else if (drag.kind === 'box') { drag.x2 = mouseW.x; drag.y2 = mouseW.y; }
+      else if (drag.kind === 'resizeBox') resizeBox(drag, mouseW);
+      else if (drag.kind === 'move') doMove(drag, mouseW);
+    } else {
+      refreshHover(sp);   // update overlapping-container highlight under the cursor
+    }
+    draw();
+  });
+  stage.addEventListener('mouseleave', ()=>{ if(hoverList.length){ hoverList=[]; hoverIdx=0; draw(); } });
+
+  window.addEventListener('mouseup', (e) => {
+    if (panning) { panning=null; stage.style.cursor=''; updateCursor(); return; }
+    if (!drag) return;
+    if (drag.kind === 'box') {
+      const w = Math.abs(drag.x2-drag.x1), h = Math.abs(drag.y2-drag.y1);
+      if (w > 0.1 && h > 0.1) {
+        const kind = drag.boxKind || 'product';
+        const id=uid();
+        const cx=(drag.x1+drag.x2)/2, cy=(drag.y1+drag.y2)/2;
+        // unit plans must go in an open product; layouts in an open unit plan
+        const ok = (kind==='product') || !!openHostFor(kind, {x:cx,y:cy}, null);
+        if (ok) {
+          const bx = { id, kind,
+            x1:Math.min(drag.x1,drag.x2), y1:Math.min(drag.y1,drag.y2),
+            x2:Math.max(drag.x1,drag.x2), y2:Math.max(drag.y1,drag.y2),
+            parentId:null, open:false, bind:{x1:null,y1:null,x2:null,y2:null} };
+          state.boxes.push(bx);
+          rebindBox(bx); // attach to parent's grids/edges if applicable
+          state.selection={kind:'box',id};
+        }
+      }
+    } else if (drag.kind === 'resizeBox') {
+      const bx = findById(state.boxes, drag.id);
+      // lock the dragged edges onto any grid/edge they were dropped on
+      rebindResizedEdges(bx, [drag.corner.includes('l')?'x1':'x2', drag.corner.includes('t')?'y1':'y2']);
+      normalizeBox(bx);
+    } else if (drag.kind === 'move' && drag.hit.kind==='box' && drag.baked) {
+      rebindBox(findById(state.boxes, drag.hit.id));
+    } else if (drag.kind === 'move' && drag.hit.kind==='wall' && drag.baked) {
+      reanchorWall(findById(state.walls, drag.hit.id));
+    } else if (drag.kind === 'move' && drag.hit.kind==='element' && drag.baked) {
+      const el=findById(state.elements, drag.hit.id);
+      const a=anchorAt(endPos(el.ref), 16/ppfNow());
+      if (a) { el.ref.x=a.x; el.ref.y=a.y; el.ref.xRef=a.xRef; el.ref.yRef=a.yRef; }
+    } else if (drag.kind === 'grid') {
+      // Click drops a gridline at the click point. Shift held → horizontal, otherwise vertical.
+      const b = drag.start;
+      const type = shiftDown ? 'h' : 'v';
+      const pos = type==='v' ? b.x : b.y;
+      addGridline(type, pos, b);
+    } else if (drag.kind === 'wall') {
+      const aW=endPos(drag.a), bW=endPos(drag.b);
+      const len = Math.hypot(bW.x-aW.x, bW.y-aW.y);
+      if (len > 0.05) {
+        const id=uid();
+        state.walls.push({ id, a:{...drag.a}, b:{...drag.b}, thickness: drag.thickness });
+        state.selection={kind:'wall',id};
+      }
+    }
+    drag=null;
+    draw();
+  });
+
+  // Commit the in-progress dimension string (≥2 refs) on Enter.
+  function commitDim(){
+    if (dimBuild && dimBuild.refs.length >= 2) {
+      const id=uid();
+      const ac = activeContainer();
+      const dim = { id, axis:dimBuild.axis, refs:dimBuild.refs.slice(), line:dimBuild.line, container: ac ? ac.kind : null, containerId: ac ? ac.id : null };
+      if (dimBuild.lock) { dim.locked = true; dim.drives = computeDrives(dimBuild.refs); }
+      else if (dimBuild.eq) { dim.eq = true; dim.drives = computeEQDrives(dimBuild.refs); }
+      else if (dimBuild.flex) { if (!setupFlex(dim, id)) { dimBuild=null; draw(); return; } }
+      state.dims.push(dim);
+      state.selection={kind:'dim',id};
+    }
+    dimBuild=null;
+    draw();
+  }
+  // For a lock dimension, decide which references are forced. Box edges are
+  // anchors (they move with their box); grid lines are driven to stay a fixed
+  // distance from the anchor. Returns drive records consumed by gridPos().
+  function computeDrives(refs){
+    const anchor = refs.find(r=>r.type==='edge') || refs[0];
+    const anchorCoord = resolveRef(anchor);
+    if (anchorCoord==null) return [];
+    const drives=[];
+    for (const r of refs) {
+      if (r.type!=='grid' || sameRef(r,anchor)) continue;
+      const c = resolveRef(r);
+      if (c==null) continue;
+      drives.push({ gridId:r.id, anchorRef:anchor, offset:c-anchorCoord });
+    }
+    return drives;
+  }
+  // For an EQ dimension: distribute grid lines to equal spacing. Box edges (and
+  // the two end references) are fixed anchors; grids between anchors interpolate.
+  function computeEQDrives(refs){
+    const ordered = refs.map(r=>({ref:r, coord:resolveRef(r)})).filter(o=>o.coord!=null).sort((a,b)=>a.coord-b.coord);
+    const N = ordered.length;
+    if (N < 3) return []; // need at least one grid between two anchors
+    const anchorSet = new Set([0, N-1]);             // chain ends are always anchors
+    ordered.forEach((o,i)=>{ if(o.ref.type==='edge') anchorSet.add(i); }); // box edges too
+    const anchors = [...anchorSet].sort((a,b)=>a-b);
+    const drives=[];
+    for (let s=0; s<anchors.length-1; s++) {
+      const i=anchors[s], j=anchors[s+1];
+      for (let p=i+1; p<j; p++) {
+        if (ordered[p].ref.type!=='grid') continue;
+        drives.push({ gridId:ordered[p].ref.id, anchorA:ordered[i].ref, anchorB:ordered[j].ref, frac:(p-i)/(j-i) });
+      }
+    }
+    return drives;
+  }
+  // For a flex dimension: record original segment lengths and per-segment percents.
+  // First & last references are anchors; interior grids are driven by flexGridPos.
+  function setupFlex(dim, id){
+    const ordered = dim.refs.map(r=>({ref:r, coord:resolveRef(r)})).filter(o=>o.coord!=null).sort((a,b)=>a.coord-b.coord);
+    const N = ordered.length;
+    if (N < 3) return false; // need at least one interior grid to distribute across 2+ segments
+    dim.refs = ordered.map(o=>o.ref);          // keep sorted order
+    dim.flex = true;
+    dim.firstRef = ordered[0].ref;
+    dim.lastRef = ordered[N-1].ref;
+    dim.segLens = [];
+    for (let i=0;i<N-1;i++) dim.segLens.push(ordered[i+1].coord - ordered[i].coord);
+    dim.S0 = ordered[N-1].coord - ordered[0].coord;
+    const nseg = N-1;
+    dim.percents = dim.segLens.map(()=>Math.round(100/nseg)); // default: even split
+    dim.drives = [];
+    for (let k=1; k<N-1; k++)
+      if (ordered[k].ref.type==='grid') dim.drives.push({ kind:'flex', dimId:id, gridId:ordered[k].ref.id, k });
+    return true;
+  }
+
+  function drawPreview() {
+    if (!drag) {
+      if (state.tool === 'grid') {
+        const type = shiftDown ? 'h' : 'v';
+        // preview in the color (and extent) of the container it would drop into
+        const host = boxContaining(mouseW);
+        const inHost = host && host.open;
+        ctx.strokeStyle = inHost ? boundaryColor(host) : 'rgba(126,182,255,.55)';
+        ctx.lineWidth=1.4; ctx.setLineDash([7,5]);
+        ctx.beginPath();
+        if (inHost) {
+          const e=boxExt(host);
+          if(type==='v'){const a=w2s({x:mouseW.x,y:e.y1}),b=w2s({x:mouseW.x,y:e.y2}); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);}
+          else {const a=w2s({x:e.x1,y:mouseW.y}),b=w2s({x:e.x2,y:mouseW.y}); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);}
+        } else {
+          if(type==='v'){const x=w2s({x:mouseW.x,y:0}).x; ctx.moveTo(x,0); ctx.lineTo(x,cv.clientHeight);}
+          else {const y=w2s({x:0,y:mouseW.y}).y; ctx.moveTo(0,y); ctx.lineTo(cv.clientWidth,y);}
+        }
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+      if (state.tool === 'dim' || state.tool === 'lockdim' || state.tool === 'eqdim' || state.tool === 'flexdim') drawDimBuildPreview();
+      if (state.tool === 'element') {
+        const a = anchorAt(mouseWRaw, 16/ppfNow());
+        if (a) {
+          const cs = [[-0.5,0],[0.5,0],[0.5,1],[-0.5,1]].map(([lx,ly])=>w2s({x:a.x+lx,y:a.y+ly}));
+          ctx.beginPath(); ctx.moveTo(cs[0].x,cs[0].y);
+          for (let i=1;i<cs.length;i++) ctx.lineTo(cs[i].x,cs[i].y);
+          ctx.closePath();
+          ctx.fillStyle='rgba(158,197,255,.35)'; ctx.fill();
+          ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1.2; ctx.stroke();
+          const P=w2s(a); ctx.fillStyle='#4c9aff'; ctx.beginPath(); ctx.arc(P.x,P.y,3.5,0,Math.PI*2); ctx.fill();
+        }
+      }
+      drawCursorMarker(); return;
+    }
+    if (drag.kind === 'wall') {
+      const aW=endPos(drag.a), bW=endPos(drag.b);
+      const a=w2s(aW), b=w2s(bW);
+      const thkPx=Math.max(2, (drag.thickness||0.5)*ppfNow());
+      ctx.lineJoin='miter'; ctx.lineCap='butt';
+      ctx.strokeStyle='rgba(174,183,198,.85)'; ctx.lineWidth=1.2;
+      strokeWallRect(a, b, thkPx);
+      const len=Math.hypot(bW.x-aW.x,bW.y-aW.y);
+      labelAt(b, fmtFeet(len));
+    } else if (drag.kind === 'grid') {
+      const b=mouseW;
+      const type = shiftDown ? 'h' : 'v';
+      ctx.strokeStyle='rgba(126,182,255,.8)'; ctx.lineWidth=1.4; ctx.setLineDash([7,5]);
+      ctx.beginPath();
+      if(type==='v'){const x=w2s({x:b.x,y:0}).x; ctx.moveTo(x,0); ctx.lineTo(x,cv.clientHeight);}
+      else {const y=w2s({x:0,y:b.y}).y; ctx.moveTo(0,y); ctx.lineTo(cv.clientWidth,y);}
+      ctx.stroke(); ctx.setLineDash([]);
+    } else if (drag.kind === 'box') {
+      const p1=w2s({x:drag.x1,y:drag.y1}), p2=w2s({x:drag.x2,y:drag.y2});
+      const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y);
+      const ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
+      ctx.strokeStyle=`hsl(${BOUNDARY_HUE[drag.boxKind]??217}, 68%, 62%)`; ctx.lineWidth=1.6; ctx.setLineDash([]);
+      ctx.strokeRect(x,y,ww,hh);
+      labelAt(p2, `${fmtFeet(Math.abs(drag.x2-drag.x1))} × ${fmtFeet(Math.abs(drag.y2-drag.y1))}`);
+    }
+    drawCursorMarker();
+  }
+
+  // Preview the dimension string being built + highlight the reference under the cursor.
+  function drawDimBuildPreview() {
+    const pick = pickReference(mouseWRaw, dimBuild ? dimBuild.axis : null);
+    // highlight the candidate reference line
+    if (pick) {
+      ctx.strokeStyle='rgba(255,180,84,.9)'; ctx.lineWidth=1.6; ctx.setLineDash([6,4]);
+      ctx.beginPath();
+      if (pick.axis==='h') { const x=w2s({x:pick.coord,y:0}).x; ctx.moveTo(x,0); ctx.lineTo(x,cv.clientHeight); }
+      else { const y=w2s({x:0,y:pick.coord}).y; ctx.moveTo(0,y); ctx.lineTo(cv.clientWidth,y); }
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (dimBuild) {
+      // preview takes the color of the container it will be committed into
+      const ac = activeContainer();
+      dimBuild.containerId = ac ? ac.id : null;
+      const live = (pick && pick.axis===dimBuild.axis && !dimBuild.refs.some(r=>sameRef(r,pick.ref))) ? pick.coord : null;
+      drawDimSpec(dimBuild, true, false, live);
+    }
+  }
+
+  function labelAt(scr, txt){
+    ctx.font='600 12px Segoe UI'; const tw=ctx.measureText(txt).width;
+    ctx.fillStyle='rgba(20,23,28,.9)'; ctx.fillRect(scr.x+10,scr.y-22,tw+10,18);
+    ctx.fillStyle='#e6e9ef'; ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillText(txt, scr.x+15, scr.y-13);
+  }
+
+  function drawCursorMarker(){
+    if (state.tool==='select' && !drag) return;
+    const s=w2s(mouseW);
+    ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.arc(s.x,s.y,5,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(s.x-9,s.y); ctx.lineTo(s.x+9,s.y);
+    ctx.moveTo(s.x,s.y-9); ctx.lineTo(s.x,s.y+9); ctx.stroke();
+  }
+
+  // ---- Move/edit ------------------------------------------------------------
+  function cloneEntity(hit){
+    const o = getEntity(hit); return JSON.parse(JSON.stringify(o));
+  }
+  function getEntity(hit){
+    if(hit.kind==='wall')return findById(state.walls,hit.id);
+    if(hit.kind==='dim')return findById(state.dims,hit.id);
+    if(hit.kind==='grid')return findById(state.gridlines,hit.id);
+    if(hit.kind==='box')return findById(state.boxes,hit.id);
+    if(hit.kind==='element')return findById(state.elements,hit.id);
+  }
+  function doMove(drag, cur){
+    const d = { x: cur.x-drag.start.x, y: cur.y-drag.start.y };
+    const o = drag.orig, ent = getEntity(drag.hit);
+    if(drag.hit.kind==='wall'){
+      if(!drag.baked){ bakeWallEnd(ent.a); bakeWallEnd(ent.b); drag.baked=true; }
+      ent.a.x=drag.startA.x+d.x; ent.a.y=drag.startA.y+d.y;
+      ent.b.x=drag.startB.x+d.x; ent.b.y=drag.startB.y+d.y;
+    } else if(drag.hit.kind==='dim'){
+      // measured coords are locked to references; dragging just slides the dim line
+      ent.line = drag.origLine + (ent.axis==='h' ? d.y : d.x);
+    } else if(drag.hit.kind==='grid'){
+      if(ent.boxId != null){
+        const bx = findById(state.boxes, ent.boxId);
+        if(bx){
+          const e = boxExt(bx);
+          const span = ent.type==='v' ? (e.x2-e.x1) : (e.y2-e.y1);
+          ent.t = o.t + (ent.type==='v' ? d.x : d.y)/(span||1);
+        }
+      } else {
+        ent.pos = ent.type==='v' ? o.pos+d.x : o.pos+d.y;
+      }
+    } else if(drag.hit.kind==='box'){
+      if(!drag.baked){ bakeBox(ent); drag.baked=true; }
+      const s=drag.startExt;
+      ent.x1=s.x1+d.x; ent.x2=s.x2+d.x; ent.y1=s.y1+d.y; ent.y2=s.y2+d.y;
+    } else if(drag.hit.kind==='element'){
+      if(!drag.baked){ bakeWallEnd(ent.ref); drag.baked=true; }
+      ent.ref.x=drag.startP.x+d.x; ent.ref.y=drag.startP.y+d.y;
+    }
+  }
+
+  // ---- Gridline management --------------------------------------------------
+  function addGridline(type, pos, at){
+    // A grid line can only go inside a box if that box is OPEN. If the point is
+    // inside a closed box, block placement entirely.
+    const inside = at ? boxContaining(at) : null;
+    if (inside && !inside.open) { return; }
+    const id=uid();
+    if (inside) {
+      // bind to the open box, stored as a fraction of its span so it moves & scales with it
+      const e = boxExt(inside);
+      const t = type==='v' ? (pos-e.x1)/(e.x2-e.x1) : (pos-e.y1)/(e.y2-e.y1);
+      state.gridlines.push({ id, type, boxId:inside.id, t });
+    } else {
+      state.gridlines.push({ id, type, boxId:null, pos });
+    }
+    relabelGrid();
+    state.selection={kind:'grid',id};
+  }
+  function relabelGrid(){
+    // vertical lines get numbers (1,2,3 left->right), horizontal get letters (A,B.. top->bottom)
+    const vs=state.gridlines.filter(g=>g.type==='v').sort((a,b)=>gridPos(a)-gridPos(b));
+    const hs=state.gridlines.filter(g=>g.type==='h').sort((a,b)=>gridPos(a)-gridPos(b));
+    vs.forEach((g,i)=>g.label=String(i+1));
+    hs.forEach((g,i)=>g.label=String.fromCharCode(65+i));
+  }
+
+  // ---- HUD ------------------------------------------------------------------
+  function updateHud(){
+    const hud=document.getElementById('hud');
+    const snapTxt = mouseW.snapped==='endpoint' ? ' · snap: endpoint' :
+                    (state.snap ? ' · snap: on' : '');
+    hud.textContent =
+      `x ${fmtFeet(mouseW.x)}   y ${fmtFeet(mouseW.y)}   ·   zoom ${(state.view.scale*100|0)}%${snapTxt}`;
+  }
+
+  // ---- Zoom -----------------------------------------------------------------
+  stage.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    const sp=getScreen(e);
+    const before=s2w(sp);
+    const factor = e.deltaY<0 ? 1.12 : 1/1.12;
+    state.view.scale = Math.max(0.15, Math.min(12, state.view.scale*factor));
+    const after=s2w(sp);
+    // keep cursor anchored
+    state.view.x += (after.x-before.x)*ppfNow();
+    state.view.y += (after.y-before.y)*ppfNow();
+    draw();
+  }, { passive:false });
+
+  // ---- Context menu (right-click a box) -------------------------------------
+  const menuEl = document.getElementById('menu');
+  // Keep clicks on the menu from bubbling to the stage (whose mousedown would
+  // otherwise hide the menu before the item's click handler runs).
+  menuEl.addEventListener('mousedown', e=>e.stopPropagation());
+
+  // ---- Flex distribution panel ----------------------------------------------
+  const flexPanel = document.getElementById('flexPanel');
+  flexPanel.addEventListener('mousedown', e=>e.stopPropagation()); // sliders don't deselect
+  function updateFlexPanel(){
+    const sel = state.selection;
+    const d = (sel && sel.kind==='dim') ? findById(state.dims, sel.id) : null;
+    const flexD = (d && d.flex) ? d : null;
+    if (!flexD){ flexPanel.style.display='none'; flexPanel.dataset.dimId=''; return; }
+    if (flexPanel.dataset.dimId !== String(flexD.id)) {
+      buildFlexPanel(flexD);
+      flexPanel.dataset.dimId = String(flexD.id);
+    } else {
+      const coords = flexD.refs.map(resolveRef).filter(v=>v!=null).sort((a,b)=>a-b);
+      for (let i=0;i<flexD.segLens.length;i++){
+        const lenEl = flexPanel.querySelector(`.seg[data-i="${i}"] .len`);
+        if (lenEl && coords[i+1]!=null) lenEl.textContent = fmtFeet(coords[i+1]-coords[i]);
+      }
+    }
+    flexPanel.style.display='block';
+  }
+  function buildFlexPanel(d){
+    const coords = d.refs.map(resolveRef).filter(v=>v!=null).sort((a,b)=>a-b);
+    let html = `<h3>Flex distribution</h3><div class="sub">Each segment's share of any size change</div>`;
+    for (let i=0;i<d.percents.length;i++){
+      const len = (coords[i+1]!=null) ? fmtFeet(coords[i+1]-coords[i]) : '';
+      html += `<div class="seg" data-i="${i}">
+        <div class="lbl"><span>Seg ${i+1} &nbsp;<span class="len">${len}</span></span><span class="pct">${d.percents[i]}%</span></div>
+        <input type="range" min="0" max="100" value="${d.percents[i]}" data-i="${i}">
+      </div>`;
+    }
+    html += `<div class="foot">Stretch a box edge — the change is split by these %.</div>`;
+    flexPanel.innerHTML = html;
+    flexPanel.querySelectorAll('input[type=range]').forEach(inp=>{
+      inp.addEventListener('input', e=>{
+        const i=+e.target.dataset.i;
+        d.percents[i] = +e.target.value;
+        const pctEl = flexPanel.querySelector(`.seg[data-i="${i}"] .pct`);
+        if (pctEl) pctEl.textContent = d.percents[i]+'%';
+        draw();
+      });
+    });
+  }
+  function hideBoxMenu(){ menuEl.style.display='none'; }
+  function showBoxMenu(x, y, boxId){
+    const bx = findById(state.boxes, boxId);
+    if (!bx) return;
+    // you can only close the container you're working in — not one with an open
+    // child still inside it (close the inner one first)
+    const lockedOpen = bx.open && boxHasOpenDescendant(bx);
+    const items = [
+      { label: bx.open ? 'Close' : 'Open', sc:'', disabled: lockedOpen, act:()=>{ if(bx.open) bx.open=false; else openWithAncestors(bx); } },
+      { label: 'Copy', sc:'Ctrl+C', act:()=>copyBox(boxId) },
+      { label: 'Paste', sc:'Ctrl+V', act:()=>pasteClipboard(s2w({x,y})), disabled:!clipboard },
+      { divider:true },
+      { label: 'Delete', sc:'Del', danger:true, act:()=>{ state.selection={kind:'box',id:boxId}; deleteSelection(); } },
+    ];
+    menuEl.innerHTML='';
+    for (const it of items){
+      if (it.divider){ const d=document.createElement('div'); d.className='divider'; menuEl.appendChild(d); continue; }
+      const el=document.createElement('div');
+      el.className='item'+(it.danger?' danger':'');
+      if (it.disabled){ el.style.opacity=.4; el.style.pointerEvents='none'; }
+      el.innerHTML=`<span>${it.label}</span><span class="sc">${it.sc||''}</span>`;
+      el.addEventListener('click', ()=>{ it.act(); hideBoxMenu(); draw(); });
+      menuEl.appendChild(el);
+    }
+    menuEl.style.left=x+'px'; menuEl.style.top=y+'px'; menuEl.style.display='block';
+  }
+  function showMenu(x, y, items){
+    menuEl.innerHTML='';
+    for (const it of items){
+      if (it.divider){ const d=document.createElement('div'); d.className='divider'; menuEl.appendChild(d); continue; }
+      const el=document.createElement('div');
+      el.className='item'+(it.danger?' danger':'');
+      if (it.disabled){ el.style.opacity=.4; el.style.pointerEvents='none'; }
+      el.innerHTML=`<span>${it.label}</span><span class="sc">${it.sc||''}</span>`;
+      el.addEventListener('click', ()=>{ it.act(); hideBoxMenu(); draw(); });
+      menuEl.appendChild(el);
+    }
+    menuEl.style.left=x+'px'; menuEl.style.top=y+'px'; menuEl.style.display='block';
+  }
+  function showElementMenu(x, y, id){
+    showMenu(x, y, [
+      { label:'Rotate 90°', sc:'R', act:()=>{ const el=findById(state.elements,id); if(el) el.rot=((el.rot||0)+90)%360; } },
+      { divider:true },
+      { label:'Delete', sc:'Del', danger:true, act:()=>{ state.selection={kind:'element',id}; deleteSelection(); } },
+    ]);
+  }
+  stage.addEventListener('contextmenu', e=>{
+    e.preventDefault();
+    const sp=getScreen(e); const wp=s2w(sp);
+    panning=null; stage.style.cursor=''; updateCursor();
+    // prefer the currently highlighted (hovered/Tab-cycled) container
+    refreshHover(sp);
+    const ht = hoverTarget();
+    if (ht && ht.kind==='box') {
+      state.selection={kind:'box',id:ht.id}; draw();
+      showBoxMenu(sp.x, sp.y, ht.id); return;
+    }
+    if (ht && ht.kind==='element') {
+      state.selection=ht; draw();
+      showElementMenu(sp.x, sp.y, ht.id); return;
+    }
+    const elHit = hitTest(wp);
+    if (elHit && elHit.kind==='element'){
+      state.selection=elHit; draw();
+      showElementMenu(sp.x, sp.y, elHit.id);
+      return;
+    }
+    const bx=boxContaining(wp);
+    if (bx){
+      state.selection={kind:'box',id:bx.id}; draw();
+      showBoxMenu(sp.x, sp.y, bx.id);
+    } else hideBoxMenu();
+  });
+  window.addEventListener('mousedown', e=>{ if(!menuEl.contains(e.target)) hideBoxMenu(); }, true);
+
+  // ---- Copy / paste ---------------------------------------------------------
+  let clipboard = null;
+  // Collect a box together with its descendant boxes and the grid lines bound to them.
+  function collectSubtree(rootId){
+    const boxes=[], grids=[];
+    const visit=(id)=>{
+      const b=findById(state.boxes,id); if(!b)return;
+      // bake current effective extent so the clone is positioned correctly even
+      // if a binding falls outside the copied subtree
+      const e=boxExt(b);
+      boxes.push({ ...JSON.parse(JSON.stringify(b)), x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2 });
+      state.gridlines.filter(g=>g.boxId===id).forEach(g=>grids.push(JSON.parse(JSON.stringify(g))));
+      state.boxes.filter(c=>c.parentId===id).forEach(c=>visit(c.id));
+    };
+    visit(rootId);
+    return { boxes, grids };
+  }
+  function copyBox(id){ clipboard = collectSubtree(id); }
+  function pasteClipboard(at){
+    if (!clipboard) return;
+    const data = JSON.parse(JSON.stringify(clipboard));
+    // offset so the paste lands near the cursor (or +2ft if no point given)
+    const root = data.boxes[0];
+    const dx = at ? at.x - root.x1 : 2;
+    const dy = at ? at.y - root.y1 : 2;
+    const idMap = new Map();
+    data.boxes.forEach(b=>idMap.set(b.id, uid()));
+    data.grids.forEach(g=>idMap.set(g.id, uid()));
+    const remap = id => (id!=null && idMap.has(id)) ? idMap.get(id) : null;
+    const remapRef = ref => {
+      if (!ref) return null;
+      if (ref.type==='grid') { const id=remap(ref.id); return id!=null ? {type:'grid',id} : null; }
+      if (ref.type==='edge') { const bid=remap(ref.boxId); return bid!=null ? {type:'edge',boxId:bid,edge:ref.edge} : null; }
+      return null;
+    };
+    data.boxes.forEach(b=>{
+      b.id=idMap.get(b.id);
+      b.parentId=remap(b.parentId);
+      b.x1+=dx; b.x2+=dx; b.y1+=dy; b.y2+=dy;
+      if (b.bind) for (const k in b.bind) b.bind[k]=remapRef(b.bind[k]);
+      b.open=false;
+    });
+    data.grids.forEach(g=>{
+      g.id=idMap.get(g.id);
+      g.boxId=remap(g.boxId);
+      if (g.boxId==null && g.pos!=null) g.pos += (g.type==='v'?dx:dy);
+    });
+    state.boxes.push(...data.boxes);
+    state.gridlines.push(...data.grids);
+    relabelGrid();
+    state.selection={kind:'box', id:data.boxes[0].id};
+    draw();
+  }
+
+  // ---- Tools / UI -----------------------------------------------------------
+  const toolbar=document.getElementById('toolbar');
+  toolbar.addEventListener('click', e=>{
+    const t=e.target.closest('.tool'); if(!t)return;
+    setTool(t.dataset.tool);
+  });
+  function setTool(name){
+    // boundary tools are only usable when their kind is the drawable one
+    if (['product','unitplan','layout'].includes(name) && name!==drawableBoundaryKind()) return;
+    state.tool=name; drag=null; dimBuild=null; hoverList=[]; hoverIdx=0;
+    [...toolbar.children].forEach(c=>c.classList.toggle('active', c.dataset.tool===name));
+    updateCursor();
+    updateTip();
+    draw();
+  }
+  // The single boundary kind that can currently be drawn: child of the deepest
+  // open boundary, or 'product' if nothing is open (null if a layout is open).
+  // The deepest open boundary (the container you're working in), or null.
+  function activeContainer(){
+    let active=null, bestDepth=-1;
+    for (const b of state.boxes) {
+      if (!b.open) continue;
+      let d=0, p=b.parentId;
+      while (p!=null) { d++; const pb=findById(state.boxes,p); p=pb?pb.parentId:null; }
+      if (d>bestDepth) { bestDepth=d; active=b; }
+    }
+    return active;
+  }
+  function drawableBoundaryKind(){
+    const active = activeContainer();
+    const child = { product:'unitplan', unitplan:'layout', layout:null };
+    return active ? child[active.kind] : 'product';
+  }
+  // Open a boundary and all its ancestors, so the full nesting chain is active
+  // (you then close them from the inside out).
+  function openWithAncestors(bx){
+    bx.open = true;
+    let p = bx.parentId;
+    while (p != null) { const pb = findById(state.boxes, p); if (!pb) break; pb.open = true; p = pb.parentId; }
+  }
+  // Enable only the drawable boundary tool; grey out the others.
+  function updateToolAvailability(){
+    const drawable = drawableBoundaryKind();
+    for (const kind of ['product','unitplan','layout']) {
+      const btn = toolbar.querySelector(`.tool[data-tool="${kind}"]`);
+      if (btn) btn.classList.toggle('disabled', kind!==drawable);
+    }
+    // if the active tool just became unavailable, fall back to select
+    if (['product','unitplan','layout'].includes(state.tool) && state.tool!==drawable) {
+      state.tool='select';
+      [...toolbar.children].forEach(c=>c.classList.toggle('active', c.dataset.tool==='select'));
+      updateCursor(); updateTip();
+    }
+  }
+  function updateCursor(){
+    stage.style.cursor = state.tool==='select' ? 'default' : 'crosshair';
+  }
+  function updateTip(){
+    const tip=document.getElementById('tip');
+    const tips={
+      select:'Select & drag to move · resize from corners · right-click a box for Open/Copy · Ctrl+C / Ctrl+V · drag a box onto an open box’s grids to attach it',
+      box:'Click & drag to draw a bounding box · grids inside crop to it · right-click → Open to nest boxes inside',
+      grid:'Click to drop a vertical grid line · hold Shift for horizontal · to add grids inside a box, right-click it → Open first',
+      wall6:'Click & drag to draw a 6" wall · endpoints snap to grid/edge intersections & box corners, and follow them',
+      wall12:'Click & drag to draw a 12" wall · endpoints snap to grid/edge intersections & box corners, and follow them',
+      dim:'Click references (grid lines or box edges) one by one, then press Enter · keep clicking for a chained string · Esc to cancel',
+      lockdim:'Lock dimension: click a box edge then a grid line, press Enter · the grid is forced to keep this distance when the box scales · Esc to cancel',
+      eqdim:'EQ dimension: click the bounding references (box edges) and the grids between them, press Enter · the grids are forced to equal spacing · Esc to cancel',
+      flexdim:'Flex dimension: click the bounding edges and the grids between, press Enter · then use the sliders to set each segment’s share of any size change · Esc to cancel',
+      product:'Click & drag to draw a Product boundary (top level). Right-click → Open to place Unit Plans inside.',
+      unitplan:'Click & drag inside an OPEN Product to draw a Unit Plan. Right-click → Open to place Layouts inside.',
+      layout:'Click & drag inside an OPEN Unit Plan to draw a Layout.',
+      element:'Click an intersection (grid×grid, grid×edge) or a boundary corner to place a 1×1 element · right-click it to Rotate 90°'
+    };
+    tip.textContent=tips[state.tool]||'';
+  }
+
+  document.getElementById('gridSize').addEventListener('input', e=>{
+    state.gridSpacing=Math.max(0.25, parseFloat(e.target.value)||2); draw();
+  });
+  document.getElementById('snap').addEventListener('change', e=>{ state.snap=e.target.checked; });
+  document.getElementById('showProductDims').addEventListener('change', e=>{ state.showDims.product=e.target.checked; draw(); });
+  document.getElementById('showUnitplanDims').addEventListener('change', e=>{ state.showDims.unitplan=e.target.checked; draw(); });
+  document.getElementById('showLayoutDims').addEventListener('change', e=>{ state.showDims.layout=e.target.checked; draw(); });
+  document.getElementById('deleteBtn').addEventListener('click', deleteSelection);
+  document.getElementById('clearBtn').addEventListener('click', ()=>{
+    if(confirm('Clear everything on the sheet?')){
+      state.gridlines=[];state.walls=[];state.dims=[];state.boxes=[];state.elements=[];state.selection=null;draw();
+    }
+  });
+  document.getElementById('fitBtn').addEventListener('click', fitView);
+
+  // Freeze every wall endpoint at its current resolved position. Call before
+  // removing grids/boxes so anchored walls stay put instead of jumping back.
+  function bakeAllWallCoords(){
+    state.walls.forEach(wl=>{ for(const ep of [wl.a,wl.b]){ const p=endPos(ep); ep.x=p.x; ep.y=p.y; } });
+    state.elements.forEach(el=>{ const p=endPos(el.ref); el.ref.x=p.x; el.ref.y=p.y; });
+  }
+  // Drop bindings/refs pointing at removed features. Wall endpoints revert to a
+  // free coord; dimensions drop dead references and are removed if <2 remain.
+  function clearRefsTo(boxIds, gridIds){
+    const dead = ref => ref && ((ref.type==='grid'&&gridIds.has(ref.id)) || (ref.type==='edge'&&boxIds.has(ref.boxId)));
+    state.boxes.forEach(b=>{ if(b.bind) for(const k in b.bind){ if(dead(b.bind[k])) b.bind[k]=null; } });
+    state.walls.forEach(wl=>{ for(const ep of [wl.a,wl.b]){ if(dead(ep.xRef)) ep.xRef=null; if(dead(ep.yRef)) ep.yRef=null; } });
+    state.elements.forEach(el=>{ if(dead(el.ref.xRef)) el.ref.xRef=null; if(dead(el.ref.yRef)) el.ref.yRef=null; });
+    // constrained dims (lock/eq/flex) depend on their exact reference set — drop
+    // the whole dim if any reference died; plain dims just lose the dead refs.
+    state.dims = state.dims.filter(d => !((d.locked||d.eq||d.flex) && d.refs.some(dead)));
+    state.dims.forEach(d=>{ d.refs = d.refs.filter(r=>!dead(r)); });
+    state.dims = state.dims.filter(d=>d.refs.length>=2);
+  }
+  function deleteSelection(){
+    const s=state.selection; if(!s)return;
+    if(s.kind==='wall')state.walls=state.walls.filter(w=>w.id!==s.id);
+    if(s.kind==='element')state.elements=state.elements.filter(el=>el.id!==s.id);
+    if(s.kind==='dim')state.dims=state.dims.filter(d=>d.id!==s.id);
+    if(s.kind==='grid'){
+      bakeAllWallCoords();
+      state.gridlines=state.gridlines.filter(g=>g.id!==s.id);
+      clearRefsTo(new Set(), new Set([s.id]));
+      relabelGrid();
+    }
+    if(s.kind==='box'){
+      // remove the box, its descendant boxes, and the grid lines bound to them
+      bakeAllWallCoords();
+      const sub = collectSubtree(s.id);
+      const boxIds = new Set(sub.boxes.map(b=>b.id));
+      const gridIds = new Set(sub.grids.map(g=>g.id));
+      state.gridlines = state.gridlines.filter(g=>!gridIds.has(g.id));
+      clearRefsTo(boxIds, gridIds); // edges/endpoints bound to removed features go free
+      state.boxes = state.boxes.filter(b=>!boxIds.has(b.id));
+      relabelGrid();
+    }
+    state.selection=null; draw();
+  }
+
+  function fitView(){
+    // gather all points
+    const pts=[];
+    state.walls.forEach(w=>{pts.push(endPos(w.a),endPos(w.b));});
+    state.dims.forEach(d=>{ const ep=dimLineEndpoints(d); if(ep)pts.push(ep[0],ep[1]); });
+    state.gridlines.forEach(g=>{ const gp=gridPos(g); if(g.type==='v')pts.push({x:gp,y:0}); else pts.push({x:0,y:gp}); });
+    state.boxes.forEach(b=>{ const e=boxExt(b); pts.push({x:e.x1,y:e.y1},{x:e.x2,y:e.y2}); });
+    state.elements.forEach(el=>{ elementCorners(el).forEach(c=>pts.push(c)); });
+    if(pts.length===0){
+      state.view={x:cv.clientWidth/2, y:cv.clientHeight/2, scale:1}; draw(); return;
+    }
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    pts.forEach(p=>{minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);});
+    const pad=4;
+    minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;
+    const wW=maxX-minX, wH=maxY-minY;
+    const sx=cv.clientWidth/(wW*PPF), sy=cv.clientHeight/(wH*PPF);
+    state.view.scale=Math.max(0.15,Math.min(12,Math.min(sx,sy)));
+    state.view.x = cv.clientWidth/2 - ((minX+maxX)/2)*ppfNow();
+    state.view.y = cv.clientHeight/2 - ((minY+maxY)/2)*ppfNow();
+    draw();
+  }
+
+  // ---- Keyboard -------------------------------------------------------------
+  let spaceDown=false;
+  let shiftDown=false;
+  window.addEventListener('keydown', e=>{
+    if(e.key==='Shift' && !shiftDown){ shiftDown=true; if(state.tool==='grid')draw(); }
+    if(e.target.tagName==='INPUT')return;
+    // Tab cycles the highlight through overlapping containers (then grids) under
+    // the cursor — never moves focus to the toolbar buttons.
+    if(e.key==='Tab'){ e.preventDefault(); if(hoverList.length>1){ hoverIdx=(hoverIdx+1)%hoverList.length; draw(); } return; }
+    // copy / paste a bounding box (with its grids & child boxes)
+    if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='c'){
+      if(state.selection && state.selection.kind==='box'){ copyBox(state.selection.id); }
+      return;
+    }
+    if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='v'){
+      pasteClipboard(state.snap ? snapWorld(mouseWRaw) : mouseWRaw); e.preventDefault(); return;
+    }
+    if(e.key==='Enter'){ if(dimBuild) commitDim(); return; }
+    if(e.code==='Space'){spaceDown=true; stage.style.cursor='grab'; e.preventDefault(); return;}
+    const k=e.key.toLowerCase();
+    if(k==='r' && state.selection && state.selection.kind==='element'){
+      const el=findById(state.elements,state.selection.id); if(el){ el.rot=((el.rot||0)+90)%360; draw(); } return;
+    }
+    if(k==='v')setTool('select');
+    else if(k==='b')setTool('product');
+    else if(k==='u')setTool('unitplan');
+    else if(k==='y')setTool('layout');
+    else if(k==='n')setTool('element');
+    else if(k==='g')setTool('grid');
+    else if(k==='w'||k==='6')setTool('wall6');
+    else if(k==='7')setTool('wall12');
+    else if(k==='d')setTool('dim');
+    else if(k==='l')setTool('lockdim');
+    else if(k==='e')setTool('eqdim');
+    else if(k==='f')setTool('flexdim');
+    else if(e.key==='Delete'||e.key==='Backspace')deleteSelection();
+    else if(e.key==='Escape'){drag=null;dimBuild=null;state.selection=null;draw();}
+    else if(e.key==='Home')fitView();
+  });
+  window.addEventListener('keyup', e=>{
+    if(e.code==='Space'){spaceDown=false; updateCursor();}
+    if(e.key==='Shift'){ shiftDown=false; if(state.tool==='grid')draw(); }
+  });
+
+  // ---- Boot -----------------------------------------------------------------
+  function seed(){
+    // a little starter content so the space isn't blank
+    state.view={x:80,y:70,scale:1};
+  }
+  seed();
+  resize();
+  setTool('select');
+  fitView();
+})();
+</script>
+</body>
+</html>
