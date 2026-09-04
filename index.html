@@ -1619,18 +1619,25 @@
     const SX=wx=>ox+(wx-e.x1)*sc, SY=wy=>oy+(wy-e.y1)*sc;
     const inRect=p=>p.x>=e.x1-0.05&&p.x<=e.x2+0.05&&p.y>=e.y1-0.05&&p.y<=e.y2+0.05;
     c.strokeStyle='#7e879a'; c.lineWidth=1; c.strokeRect(ox,oy,W*sc,H*sc);
+    // Scope to this box's own subtree (itself + descendants) by ownership,
+    // not just world position — two unit plans/layouts can sit in different
+    // products at overlapping coordinates, and a purely positional check
+    // would leak an ancestor's (or an unrelated box's) grid lines in.
+    const scopeIds = new Set([box.id]);
+    for (const b of state.boxes) if (isBoxAncestor(box.id, b)) scopeIds.add(b.id);
     // nested boundaries (e.g. a product's unit plans, a unit plan's layouts)
     c.setLineDash([2,2]);
     for(const d of state.boxes){
-      if(d.id===box.id || !isBoxAncestor(box.id,d)) continue;
+      if(d.id===box.id || !scopeIds.has(d.id)) continue;
       const de=boxExt(d);
       c.strokeStyle=boundaryColor(d); c.lineWidth=1;
       c.strokeRect(SX(de.x1), SY(de.y1), (de.x2-de.x1)*sc, (de.y2-de.y1)*sc);
     }
     c.setLineDash([]);
-    // grid lines that fall within the box
+    // grid lines actually bound to this box or one of its descendants
     c.strokeStyle='#7da0d0'; c.setLineDash([3,2]);
     for(const g of state.gridlines){
+      if (g.boxId==null || !scopeIds.has(g.boxId)) continue;
       const gp=gridPos(g);
       c.beginPath();
       if(g.type==='v'){ if(gp<e.x1-0.05||gp>e.x2+0.05) continue; const x=SX(gp); c.moveTo(x,SY(e.y1)); c.lineTo(x,SY(e.y2)); }
