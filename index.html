@@ -1914,11 +1914,11 @@
     const productName = (parent && parent.kind==='product') ? productDisplayName(parent) : 'Product';
     return { prefix: bx.name, suffix: '_'+productName };
   }
-  // Delete a Product/Unit Plan/Layout boundary (and its nested contents) —
-  // the Library's own Delete button is the only place this is allowed from.
+  // Delete a Product/Unit Plan/Layout boundary (and its nested contents) via
+  // the shared deleteSelection() path, same as the canvas right-click menu uses.
   function deleteBoundary(id){
     state.selection = { kind:'box', id };
-    deleteSelection({allowBoundary:true});
+    deleteSelection();
   }
   // Currently-open boundaries sort to the top of their list.
   const openFirst = (a,b) => (b.open?1:0) - (a.open?1:0);
@@ -2010,6 +2010,8 @@
       { label: bx.open ? 'Close' : 'Open', sc:'', disabled: lockedOpen, act:()=>{ if(bx.open) closeBoundary(bx); else openWithAncestors(bx); } },
       { label: 'Copy', sc:'Ctrl+C', act:()=>copyBox(boxId) },
       { label: 'Paste', sc:'Ctrl+V', act:()=>pasteClipboard(s2w({x,y})), disabled:!clipboard },
+      { divider:true },
+      { label: 'Delete', sc:'Del', danger:true, act:()=>{ state.multiSelection=[]; state.selection={kind:'box',id:boxId}; deleteSelection(); } },
     ];
     menuEl.innerHTML='';
     for (const it of items){
@@ -2270,10 +2272,15 @@
     // Dimensions: remap their references the same way (a ref to something
     // outside the copied subtree — e.g. a dim inside a Layout that measures
     // to the enclosing Unit Plan's own edge — just gets dropped, same as
-    // remapRef already does; never fabricate a stand-in grid line for it),
-    // rescale the dimension-line position and, for locked/EQ/flex dims,
-    // their driven distances, by the same factor the geometry itself was
-    // rescaled by. A dim left with under 2 refs is dropped entirely.
+    // remapRef already does; never fabricate a stand-in grid line for it).
+    // A dim left with under 2 refs is dropped entirely. For locked/EQ/flex
+    // dims, the driven distances are RECOMPUTED from scratch off the
+    // remapped refs (grids/boxes are already live at their new, rescaled
+    // positions) using the exact same computeDrives/computeEQDrives/
+    // setupFlex calls a freshly-drawn dimension would use, rather than
+    // trying to transform the old derived data — that guarantees the copy
+    // behaves identically to the original instead of drifting through
+    // several rounds of manual rescaling.
     data.dims = data.dims.map(d=>{
       d.id = remapDimId(d.id);
       d.containerId = remap(d.containerId) ?? rootId;
@@ -2282,28 +2289,12 @@
       d.line = d.axis==='h' ? fy(d.line) : fx(d.line);
       const contBox = findById(data.boxes, d.containerId);
       if (contBox) d.lineOff = d.line - (d.axis==='h' ? contBox.y1 : contBox.x1);
-      const gridAxisScale = type => type==='v' ? (tW/oW) : (tH/oH);
-      if (d.drives) {
-        d.drives = d.drives.map(dr=>{
-          const nd = {...dr};
-          if (nd.gridId!=null) nd.gridId = remap(nd.gridId);
-          if (nd.anchorRef) nd.anchorRef = remapRef(nd.anchorRef);
-          if (nd.anchorA) nd.anchorA = remapRef(nd.anchorA);
-          if (nd.anchorB) nd.anchorB = remapRef(nd.anchorB);
-          if (nd.dimId!=null) nd.dimId = remapDimId(nd.dimId);
-          if (nd.offset!==undefined) {
-            const g = findById(data.grids, nd.gridId);
-            nd.offset = dr.offset * (g ? gridAxisScale(g.type) : 1);
-          }
-          return nd;
-        }).filter(dr=>dr.gridId!=null);
-      }
-      if (d.firstRef) d.firstRef = remapRef(d.firstRef);
-      if (d.lastRef) d.lastRef = remapRef(d.lastRef);
-      if (d.flex && d.segLens) {
-        const axisScale = d.axis==='h' ? (tW/oW) : (tH/oH);
-        d.segLens = d.segLens.map(l=>l*axisScale);
-        d.S0 = d.S0*axisScale;
+      if (d.locked) {
+        d.drives = computeDrives(d.refs);
+      } else if (d.eq) {
+        d.drives = computeEQDrives(d.refs);
+      } else if (d.flex) {
+        if (!setupFlex(d, d.id)) { d.flex=false; d.drives=[]; }
       }
       return d;
     }).filter(Boolean);
@@ -2477,11 +2468,7 @@
   // Delete one selection-shaped target ({kind,id}) — a wall, element, dim,
   // grid, or box (with its descendant boxes/grids). Shared by single delete
   // and the multi-select bulk delete below.
-  // A Product/Unit Plan/Layout boundary can only be deleted from the
-  // Library panel (opts.allowBoundary) — deleting it from the canvas (Del
-  // key, right-click menu) is a no-op instead, so a stray delete can't
-  // wipe out a whole nested structure by accident.
-  function deleteOne(s, opts={}){
+  function deleteOne(s){
     if(s.kind==='wall')state.walls=state.walls.filter(w=>w.id!==s.id);
     if(s.kind==='element')state.elements=state.elements.filter(el=>el.id!==s.id);
     if(s.kind==='dim')state.dims=state.dims.filter(d=>d.id!==s.id);
@@ -2492,7 +2479,6 @@
       relabelGrid();
     }
     if(s.kind==='box'){
-      if(!opts.allowBoundary) return;
       // remove the box, its descendant boxes, the grid lines bound to them,
       // and the walls/elements/dims that belong to any of them
       bakeAllWallCoords();
@@ -2508,10 +2494,10 @@
       relabelGrid();
     }
   }
-  function deleteSelection(opts={}){
+  function deleteSelection(){
     const targets = state.multiSelection.length ? state.multiSelection : (state.selection ? [state.selection] : []);
     if (!targets.length) return;
-    for (const s of targets) deleteOne(s, opts);
+    for (const s of targets) deleteOne(s);
     refreshTray(); // wall/element/grid/box removal can all change a preview's contents
     saveStateToStorage(); // deletes always persist immediately, so they can't come back on reload
     state.selection=null; state.multiSelection=[]; draw();
