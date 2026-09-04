@@ -2141,8 +2141,19 @@
     // you can only close the container you're working in — not one with an open
     // child still inside it (close the inner one first)
     const lockedOpen = bx.open && boxHasOpenDescendant(bx);
+    // Closing a box that's part of a lineage (an instance of a master, or a
+    // master other instances point back to) asks which way to save; closing
+    // anything else is just a plain close, nothing to diverge.
+    const closeItems = !bx.open
+      ? [{ label:'Open', sc:'', disabled:lockedOpen, act:()=>openWithAncestors(bx) }]
+      : boxLineage(bx)
+        ? [
+            { label:'Close and save to main', sc:'', disabled:lockedOpen, act:()=>{ saveToMain(bx.id); closeBoundary(bx); } },
+            { label:'Close and create branch', sc:'', disabled:lockedOpen, act:()=>{ saveAsBranch(bx.id); closeBoundary(bx); } },
+          ]
+        : [{ label:'Close', sc:'', disabled:lockedOpen, act:()=>closeBoundary(bx) }];
     const items = [
-      { label: bx.open ? 'Close' : 'Open', sc:'', disabled: lockedOpen, act:()=>{ if(bx.open) closeBoundary(bx); else openWithAncestors(bx); } },
+      ...closeItems,
       { label: 'Copy', sc:'Ctrl+C', act:()=>copyBox(boxId) },
       { label: 'Paste', sc:'Ctrl+V', act:()=>pasteClipboard(s2w({x,y})), disabled:!clipboard },
       { divider:true },
@@ -2312,10 +2323,26 @@
   // exactly between the 4 picked references, and drop it into the currently
   // open container — a fresh, independent instance (edits to it never touch
   // the original, or any other instance placed elsewhere).
-  function insertSubtreeAt(sourceId, refs){
-    const x1=resolveRef(refs.x1), x2=resolveRef(refs.x2), y1=resolveRef(refs.y1), y2=resolveRef(refs.y2);
-    if (x1==null||x2==null||y1==null||y2==null) return;
-    const tX1=Math.min(x1,x2), tX2=Math.max(x1,x2), tY1=Math.min(y1,y2), tY2=Math.max(y1,y2);
+  // `opts.existingRootId`, when given, replaces that box's own contents in
+  // place (used to sync a master's canonical content into an instance, or an
+  // edited instance's content back into its master) instead of inserting a
+  // brand-new box — `refs` is ignored and the target rect is the existing
+  // box's own current extent, and its identity fields (parentId/bind/open/
+  // isInstance/masterId/name) are preserved rather than reset.
+  // `opts.silent` skips the per-call selection/refresh/save/draw so a batch
+  // of calls (propagating to every sibling instance) can do that once at the end.
+  function insertSubtreeAt(sourceId, refs, opts){
+    opts = opts || {};
+    const existingBox = opts.existingRootId ? findById(state.boxes, opts.existingRootId) : null;
+    let tX1,tX2,tY1,tY2;
+    if (existingBox) {
+      const e = boxExt(existingBox);
+      tX1=e.x1; tX2=e.x2; tY1=e.y1; tY2=e.y2;
+    } else {
+      const x1=resolveRef(refs.x1), x2=resolveRef(refs.x2), y1=resolveRef(refs.y1), y2=resolveRef(refs.y2);
+      if (x1==null||x2==null||y1==null||y2==null) return;
+      tX1=Math.min(x1,x2); tX2=Math.max(x1,x2); tY1=Math.min(y1,y2); tY2=Math.max(y1,y2);
+    }
     const tW=tX2-tX1, tH=tY2-tY1;
     if (tW<0.1 || tH<0.1) return;
 
@@ -2329,8 +2356,25 @@
     const oX1=rootOrig.x1, oY1=rootOrig.y1, oW=(rootOrig.x2-rootOrig.x1)||1, oH=(rootOrig.y2-rootOrig.y1)||1;
     const fx = x => tX1 + ((x-oX1)/oW)*tW, fy = y => tY1 + ((y-oY1)/oH)*tH;
 
+    // Replacing an existing box's contents: clear out what it currently owns
+    // (descendant boxes, their grids, and everything's walls/elements/dims)
+    // before the fresh remapped copy goes in — the box itself (its own row
+    // in state.boxes) stays, only its insides are swapped out.
+    if (existingBox) {
+      bakeAllWallCoords();
+      const oldChildIds = new Set(collectSubtree(existingBox.id).boxes.map(b=>b.id).filter(id=>id!==existingBox.id));
+      const ownedIds = new Set([existingBox.id, ...oldChildIds]);
+      const oldGridIds = new Set(state.gridlines.filter(g=>ownedIds.has(g.boxId)).map(g=>g.id));
+      clearRefsTo(oldChildIds, oldGridIds);
+      state.boxes = state.boxes.filter(b=>!oldChildIds.has(b.id));
+      state.gridlines = state.gridlines.filter(g=>!oldGridIds.has(g.id));
+      state.walls = state.walls.filter(w=>!ownedIds.has(w.containerId));
+      state.elements = state.elements.filter(el=>!ownedIds.has(el.containerId));
+      state.dims = state.dims.filter(d=>!ownedIds.has(d.containerId));
+    }
+
     const idMap = new Map();
-    data.boxes.forEach(b=>idMap.set(b.id, uid()));
+    data.boxes.forEach(b=>idMap.set(b.id, (existingBox && b.id===origRootId) ? existingBox.id : uid()));
     data.grids.forEach(g=>idMap.set(g.id, uid()));
     const remap = id => (id!=null && idMap.has(id)) ? idMap.get(id) : null;
     const remapRef = ref => {
@@ -2359,15 +2403,36 @@
 
     const rootId = idMap.get(origRootId);
     const rootBox = findById(data.boxes, rootId);
-    const ac = activeContainer();
-    rootBox.parentId = ac ? ac.id : null;
-    // the root tracks the 4 picked references, same as a normally-drawn
-    // nested boundary bound to its host's grids/edges
-    rootBox.bind = { x1:refs.x1, y1:refs.y1, x2:refs.x2, y2:refs.y2 };
+    if (existingBox) {
+      // replacing an existing box's contents — keep its own identity
+      // (position, parent, binding, name, instance/master status) exactly
+      // as it was; only the stuff inside it is new
+      rootBox.parentId = existingBox.parentId;
+      rootBox.bind = existingBox.bind;
+      rootBox.open = existingBox.open;
+      rootBox.isInstance = existingBox.isInstance;
+      rootBox.masterId = existingBox.masterId;
+      rootBox.name = existingBox.name;
+      Object.assign(existingBox, rootBox);
+    } else {
+      const ac = activeContainer();
+      rootBox.parentId = ac ? ac.id : null;
+      // the root tracks the 4 picked references, same as a normally-drawn
+      // nested boundary bound to its host's grids/edges
+      rootBox.bind = { x1:refs.x1, y1:refs.y1, x2:refs.x2, y2:refs.y2 };
+      // remember which master (live box or archived entry) this instance
+      // came from, so closing it later can offer to push edits back to
+      // every other instance sharing the same master ("save to main")
+      // instead of always branching off silently independent
+      rootBox.masterId = sourceId;
+    }
 
     // Boxes/grids go live now, before anything below needs to resolve
-    // against them (rebinding nested boxes reads live state).
-    state.boxes.push(...data.boxes);
+    // against them (rebinding nested boxes reads live state). The root
+    // itself is already live (either just-pushed normally, or — when
+    // replacing an existing box — already in state.boxes and just updated
+    // above via Object.assign, so it's pushed once, not duplicated).
+    state.boxes.push(...data.boxes.filter(b=>b.id!==rootId || !existingBox));
     state.gridlines.push(...data.grids);
     // Every non-root box in the subtree (e.g. a Layout nested inside an
     // inserted Unit Plan) still needs its edges locked to ITS host's grids/
@@ -2441,10 +2506,12 @@
     state.elements.push(...data.elements);
     state.dims.push(...data.dims);
     relabelGrid();
+    if (opts.silent) return rootId;
     state.selection={kind:'box', id:rootId};
     refreshTray();
     saveStateToStorage();
     draw();
+    return rootId;
   }
   // Highlight picked/candidate edges while inserting a copy.
   function drawInserting(){
@@ -2567,6 +2634,47 @@
     bx.open = false;
     refreshTray();
   }
+  // A box "belongs to a lineage" once it's either an instance of some master
+  // (masterId set) or is itself a master other live instances point back to
+  // — only then does closing it need to ask which way to save.
+  function hasLiveInstances(id){ return state.boxes.some(b=>b.masterId===id); }
+  function boxLineage(bx){ return bx.masterId!=null || hasLiveInstances(bx.id); }
+  // "Close and save to main": push this box's current (just-edited) content
+  // up into the master it belongs to (whether that's itself already, a live
+  // box elsewhere, or an archived Library entry), then push that same
+  // canonical content back out to every other live instance sharing that
+  // master, so they all end up identical to what you just edited.
+  function saveToMain(boxId){
+    const box = findById(state.boxes, boxId);
+    if (!box) return;
+    const masterId = box.masterId!=null ? box.masterId : box.id;
+    if (masterId !== box.id) {
+      const masterLive = findById(state.boxes, masterId);
+      if (masterLive) {
+        insertSubtreeAt(box.id, null, { existingRootId: masterId, silent:true });
+      } else {
+        const archivedEntry = findById(state.archived, masterId);
+        if (archivedEntry) archivedEntry.snapshot = collectSubtreeFull(box.id);
+      }
+    }
+    for (const other of state.boxes.filter(b=>b.masterId===masterId && b.id!==box.id)) {
+      insertSubtreeAt(box.id, null, { existingRootId: other.id, silent:true });
+    }
+    refreshTray();
+    saveStateToStorage();
+  }
+  // "Close and create branch": detach this specific placement from its
+  // lineage — it keeps the edits you just made, becomes its own independent
+  // master going forward, and nothing else on the canvas (or in the
+  // Library) changes.
+  function saveAsBranch(boxId){
+    const box = findById(state.boxes, boxId);
+    if (!box) return;
+    box.masterId = null;
+    box.isInstance = false;
+    refreshTray();
+    saveStateToStorage();
+  }
   // Enable only the drawable boundary tool; grey out the others.
   const elementGroupEl = document.getElementById('elementGroup');
   function updateToolAvailability(){
@@ -2649,12 +2757,19 @@
     if(s.kind==='box'){
       // Deleting a Product/Unit Plan/Layout from the canvas doesn't erase
       // it — it archives a full snapshot first (so the Library/Insert can
-      // still show and re-place it), then removes the live copy. An
-      // inserted instance isn't archived (it's not a master; the original
-      // it came from is already archived/listed on its own).
-      const box = findById(state.boxes, s.id);
-      if (box && !box.isInstance) {
-        state.archived.push({ id: uid(), kind: box.kind, name: box.name, snapshot: collectSubtreeFull(s.id) });
+      // still show and re-place it), then removes the live copy. This
+      // includes every non-instance box nested inside it (e.g. a Layout
+      // saved inside a Unit Plan you're deleting) — each gets its own
+      // standalone archived entry, not just the one you directly deleted.
+      // An inserted instance isn't archived (it's not a master; the
+      // original it came from is already archived/listed on its own).
+      for (const b of collectSubtree(s.id).boxes) {
+        const box = findById(state.boxes, b.id);
+        // reuse the box's own id for the archived entry (not a fresh uid) so
+        // any instance's masterId still resolves to it after archiving
+        if (box && !box.isInstance) {
+          state.archived.push({ id: box.id, kind: box.kind, name: box.name, snapshot: collectSubtreeFull(box.id) });
+        }
       }
       removeBoxSubtree(s.id);
     }
