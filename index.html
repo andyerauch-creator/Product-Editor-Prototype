@@ -165,6 +165,12 @@
   /* An original with branches, once clicked, stays blue so it's clear which
      one the Branches tray to the right is currently showing. */
   .panel .item.lib-selected { border-color: #4c9aff; box-shadow: 0 0 0 1px #4c9aff; }
+  /* Marks a root's preview as having branches — the only rows that can open
+     the Branches/Versions tray. */
+  .panel .item .branch-star {
+    position: absolute; top: 5px; right: 6px; color: #ffd54a; font-size: 13px;
+    text-shadow: 0 1px 2px rgba(0,0,0,.7); pointer-events: none;
+  }
   /* The only way to create a Product — sits above the Product list. */
   .panel .item.add-new {
     display: flex; align-items: center; justify-content: center; height: 40px;
@@ -2066,11 +2072,14 @@
   // Library root row and every branch row shown for it in the Branches
   // tray. `onCardClick`, when given, fires alongside the normal
   // select-on-canvas click (used by root rows to open/focus their branches).
-  function buildLibraryItem(kind, entry, onCardClick){
+  // `hasBranches` just draws the little star badge on the preview — pass it
+  // only for a root row so a branch row inside the tray doesn't get one too.
+  function buildLibraryItem(kind, entry, onCardClick, hasBranches){
     const { live, obj } = entry;
     const item=document.createElement('div');
     item.className='item'+(live && obj.open?' open':'')+(!live?' archived':'');
     const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
+    if (hasBranches) { const star=document.createElement('span'); star.className='branch-star'; star.textContent='★'; star.title='Has branches'; item.appendChild(star); }
     const nm=document.createElement('div'); nm.className='nm';
     const inp=document.createElement('input'); inp.type='text'; inp.value=obj.name||'';
     inp.placeholder='Name this '+KIND_LABEL[kind].toLowerCase();
@@ -2137,11 +2146,12 @@
       listEl.appendChild(add);
     }
     for (const g of groups) {
+      const hasBranches = kind!=='product' && g.branches.length>0;
       const onClick = kind==='product'
         ? (g.root.live ? ()=>{ openWithAncestors(g.root.obj); centerViewOnBox(g.root.obj, 10); draw(); } : null)
-        : ()=>selectBranchRoot(kind, g.root.obj.id);
-      const card = buildLibraryItem(kind, g.root, onClick);
-      if (kind!=='product' && state.branchRootId===g.root.obj.id) card.classList.add('lib-selected');
+        : (hasBranches ? ()=>selectBranchRoot(kind, g.root.obj.id) : null);
+      const card = buildLibraryItem(kind, g.root, onClick, hasBranches);
+      if (hasBranches && state.branchRootId===g.root.obj.id) card.classList.add('lib-selected');
       listEl.appendChild(card);
     }
   }
@@ -2613,12 +2623,14 @@
   const insertListEl = document.getElementById('insertList');
   // One card for the main Insert list or the Versions tray — `onCardClick`
   // decides what clicking it does (open Versions vs. actually start the
-  // insert), same split as buildLibraryItem/buildKindList.
-  function buildInsertCard(kind, entry, onCardClick){
+  // insert), same split as buildLibraryItem/buildKindList. `hasBranches`
+  // just draws the star badge — pass it only for a main-list root card.
+  function buildInsertCard(kind, entry, onCardClick, hasBranches){
     const { live, obj } = entry;
     const item=document.createElement('div');
     item.className='item'+(!live?' archived':'')+((state.inserting&&state.inserting.sourceId===obj.id)?' placing':'');
     const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
+    if (hasBranches) { const star=document.createElement('span'); star.className='branch-star'; star.textContent='★'; star.title='Has branches'; item.appendChild(star); }
     const nm=document.createElement('div'); nm.className='nm';
     const label=document.createElement('div'); label.className='label'; label.textContent=obj.name || KIND_LABEL[kind];
     nm.appendChild(label);
@@ -2643,8 +2655,10 @@
       return;
     }
     for (const g of buildLibraryGroups(kind)) {
-      const card = buildInsertCard(kind, g.root, ()=>selectInsertBranchRoot(kind, g.root.obj.id));
-      if (state.insertBranchRootId===g.root.obj.id) card.classList.add('lib-selected');
+      const hasBranches = g.branches.length>0;
+      const onClick = hasBranches ? ()=>selectInsertBranchRoot(kind, g.root.obj.id) : ()=>startInsert(g.root.obj.id);
+      const card = buildInsertCard(kind, g.root, onClick, hasBranches);
+      if (hasBranches && state.insertBranchRootId===g.root.obj.id) card.classList.add('lib-selected');
       insertListEl.appendChild(card);
     }
     refreshInsertBranchesTray();
