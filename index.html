@@ -585,11 +585,22 @@
     const y = ep.yRef ? resolveRef(ep.yRef) : null;
     return { x: x!=null ? x : ep.x, y: y!=null ? y : ep.y };
   }
+  // A dimension/wall/element drawn while a container is open should only be
+  // able to tag that container's own grids and its own boundary — never a
+  // parent's or child's — even when they happen to sit at the same
+  // coordinate (e.g. a Unit Plan that exactly fills its Product). With
+  // nothing open, only top-level Products' own edges (and free grids) are
+  // in scope.
+  function ownFeatureBoxes(){
+    const ac = activeContainer();
+    return ac ? [ac] : state.boxes.filter(b=>b.kind==='product');
+  }
   // Vertical features (give an x): vertical grid lines + box left/right edges.
   function vFeatures() {
     const out=[];
-    for (const g of state.gridlines) if (g.type==='v') out.push({coord:gridPos(g), ref:{type:'grid',id:g.id}});
-    for (const b of state.boxes) { const e=boxExt(b);
+    const activeId = activeContainer() ? activeContainer().id : null;
+    for (const g of state.gridlines) if (g.type==='v' && g.boxId===activeId) out.push({coord:gridPos(g), ref:{type:'grid',id:g.id}});
+    for (const b of ownFeatureBoxes()) { const e=boxExt(b);
       out.push({coord:e.x1, ref:{type:'edge',boxId:b.id,edge:'x1'}});
       out.push({coord:e.x2, ref:{type:'edge',boxId:b.id,edge:'x2'}});
     }
@@ -598,8 +609,9 @@
   // Horizontal features (give a y): horizontal grid lines + box top/bottom edges.
   function hFeatures() {
     const out=[];
-    for (const g of state.gridlines) if (g.type==='h') out.push({coord:gridPos(g), ref:{type:'grid',id:g.id}});
-    for (const b of state.boxes) { const e=boxExt(b);
+    const activeId = activeContainer() ? activeContainer().id : null;
+    for (const g of state.gridlines) if (g.type==='h' && g.boxId===activeId) out.push({coord:gridPos(g), ref:{type:'grid',id:g.id}});
+    for (const b of ownFeatureBoxes()) { const e=boxExt(b);
       out.push({coord:e.y1, ref:{type:'edge',boxId:b.id,edge:'y1'}});
       out.push({coord:e.y2, ref:{type:'edge',boxId:b.id,edge:'y2'}});
     }
@@ -850,7 +862,7 @@
       const p1 = w2s({x:e.x1,y:e.y1}), p2 = w2s({x:e.x2,y:e.y2});
       const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y);
       const ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
-      const col = hov ? '#ffd54a' : (bx.id===activeId ? '#ff5c5c' : boundaryColor(bx));
+      const col = hov ? '#ffd54a' : (sel ? '#4c9aff' : (bx.id===activeId ? '#ff5c5c' : boundaryColor(bx)));
       ctx.setLineDash([]);
       ctx.strokeStyle = col;
       ctx.lineWidth = (bx.id===activeId) ? 2.5 : (hov||sel ? 2.2 : 1.4);
