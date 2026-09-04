@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>Drafting Space — Grids & Walls</title>
+<title>Product Editor</title>
 <style>
   :root {
     --bg: #1e2128;
@@ -165,6 +165,12 @@
   /* An original with branches, once clicked, stays blue so it's clear which
      one the Branches tray to the right is currently showing. */
   .panel .item.lib-selected { border-color: #4c9aff; box-shadow: 0 0 0 1px #4c9aff; }
+  /* The only way to create a Product — sits above the Product list. */
+  .panel .item.add-new {
+    display: flex; align-items: center; justify-content: center; height: 40px;
+    border-style: dashed; color: var(--muted); font-size: 20px; font-weight: 600; line-height: 1;
+  }
+  .panel .item.add-new:hover { border-color: var(--accent); color: var(--ink); background: var(--panel-2); }
   .panel h3 { display: flex; align-items: center; justify-content: space-between; }
   .panel h3 #closeBranchesBtn {
     background: none; border: none; color: var(--muted); font-size: 16px; line-height: 1;
@@ -182,7 +188,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>Drafting Space <span>· Grids &amp; Walls</span></h1>
+    <h1>Product Editor</h1>
     <div class="sep"></div>
     <span class="field" title="Show/hide dimensions by the container they were drawn in">Dims:</span>
     <label class="field" style="color:#3b82f6"><input id="showProductDims" type="checkbox" checked> Product</label>
@@ -235,10 +241,6 @@
       </div>
       <details class="group" open>
         <summary>Boundaries</summary>
-        <div class="tool" data-tool="product" title="Product boundary (B) — top level">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="14" rx="1"/></svg>
-          Product
-        </div>
         <div class="tool" data-tool="unitplan" title="Unit Plan boundary (U) — goes inside an open Product">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
           Unit Plan
@@ -2109,6 +2111,12 @@
   function buildKindList(kind, listEl){
     const groups = buildLibraryGroups(kind);
     listEl.innerHTML='';
+    if (kind==='product') {
+      const add=document.createElement('div'); add.className='item add-new'; add.textContent='+';
+      add.title='New Product';
+      add.addEventListener('click', createNewProduct);
+      listEl.appendChild(add);
+    }
     for (const g of groups) {
       const onClick = kind==='product'
         ? (g.root.live ? ()=>{ openWithAncestors(g.root.obj); draw(); } : null)
@@ -2659,10 +2667,13 @@
     }
     return active;
   }
+  // Products aren't drawn or inserted at all — the only way to get one is
+  // the Library's "+ New Product" button — so with nothing open there's
+  // nothing drawable/insertable yet (null), not 'product'.
   function drawableBoundaryKind(){
     const active = activeContainer();
     const child = { product:'unitplan', unitplan:'layout', layout:null };
-    return active ? child[active.kind] : 'product';
+    return active ? child[active.kind] : null;
   }
   // The tray's title tracks whatever boundary you currently have open —
   // "Library" alone when nothing is open.
@@ -2671,6 +2682,27 @@
   function updateLibraryTitle(){
     const active = activeContainer();
     libraryTitleEl.textContent = active ? `Library: ${KIND_LABEL[active.kind]}` : 'Library';
+  }
+  // "+ New Product": the only way to create one now (no draw tool, no
+  // Insert) — drops a fresh, already-open Product in clear space to the
+  // right of any existing top-level Products (or at the origin if this is
+  // the first one) and centers the view on it, ready to work in.
+  function createNewProduct(){
+    const W = 60, H = 40; // feet — a reasonable size to start from, freely resizable after
+    const existing = state.boxes.filter(b=>b.kind==='product');
+    const x1 = existing.length ? Math.max(...existing.map(b=>boxExt(b).x2)) + 10 : 0;
+    const id = uid();
+    const bx = { id, kind:'product', name:null, x1, y1:0, x2:x1+W, y2:H, parentId:null, open:true, bind:{x1:null,y1:null,x2:null,y2:null} };
+    state.boxes.push(bx);
+    state.selection = { kind:'box', id };
+    const cx=(bx.x1+bx.x2)/2, cy=(bx.y1+bx.y2)/2;
+    const sx = cv.clientWidth/((W+20)*PPF), sy = cv.clientHeight/((H+20)*PPF);
+    state.view.scale = Math.max(0.15, Math.min(12, Math.min(sx,sy)));
+    state.view.x = cv.clientWidth/2 - cx*ppfNow();
+    state.view.y = cv.clientHeight/2 - cy*ppfNow();
+    refreshTray();
+    saveStateToStorage();
+    draw();
   }
   // Open a boundary and all its ancestors, so the full nesting chain is active
   // (you then close them from the inside out).
@@ -2915,7 +2947,6 @@
       const el=findById(state.elements,state.selection.id); if(el){ el.rot=((el.rot||0)+90)%360; draw(); } return;
     }
     if(k==='v')setTool('select');
-    else if(k==='b')setTool('product');
     else if(k==='u')setTool('unitplan');
     else if(k==='y')setTool('layout');
     else if(k==='n')setTool('element:toilet');
