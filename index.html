@@ -77,6 +77,7 @@
   #toolbar .group summary::-webkit-details-marker { display: none; }
   #toolbar .group summary::after { content: '▸'; font-size: 9px; transition: transform .15s; }
   #toolbar .group[open] summary::after { transform: rotate(90deg); }
+  #toolbar .group.disabled { opacity: .35; pointer-events: none; }
 
   .field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
   .field input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); }
@@ -235,7 +236,7 @@
           Layout
         </div>
       </details>
-      <details class="group" open>
+      <details class="group" id="elementGroup" title="Only usable while a Layout is open">
         <summary>Element</summary>
         <div class="tool" data-tool="element:toilet" title="Toilet (N) — place on an intersection/corner">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="3" width="10" height="4.5" rx="1" fill="currentColor" stroke="none"/><ellipse cx="12" cy="15" rx="7" ry="6.2"/></svg>
@@ -2206,6 +2207,8 @@
   function setTool(name){
     // boundary tools are only usable when their kind is the drawable one
     if (['product','unitplan','layout'].includes(name) && name!==drawableBoundaryKind()) return;
+    // elements are only placeable while a Layout is open
+    if (isElementTool(name) && (activeContainer()||{}).kind!=='layout') return;
     state.tool=name; drag=null; dimBuild=null; hoverList=[]; hoverIdx=0;
     toolbar.querySelectorAll('.tool[data-tool]').forEach(c=>c.classList.toggle('active', c.dataset.tool===name));
     updateCursor();
@@ -2253,14 +2256,21 @@
     refreshTray();
   }
   // Enable only the drawable boundary tool; grey out the others.
+  const elementGroupEl = document.getElementById('elementGroup');
   function updateToolAvailability(){
     const drawable = drawableBoundaryKind();
     for (const kind of ['product','unitplan','layout']) {
       const btn = toolbar.querySelector(`.tool[data-tool="${kind}"]`);
       if (btn) btn.classList.toggle('disabled', kind!==drawable);
     }
+    // Elements are furniture/fixtures for a Layout's interior — only usable
+    // while a Layout is the open (deepest) container.
+    const layoutOpen = (activeContainer()||{}).kind === 'layout';
+    elementGroupEl.classList.toggle('disabled', !layoutOpen);
     // if the active tool just became unavailable, fall back to select
-    if (['product','unitplan','layout'].includes(state.tool) && state.tool!==drawable) {
+    const toolNowInvalid = (['product','unitplan','layout'].includes(state.tool) && state.tool!==drawable)
+      || (isElementTool(state.tool) && !layoutOpen);
+    if (toolNowInvalid) {
       state.tool='select';
       toolbar.querySelectorAll('.tool[data-tool]').forEach(c=>c.classList.toggle('active', c.dataset.tool==='select'));
       updateCursor(); updateTip();
