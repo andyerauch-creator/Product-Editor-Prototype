@@ -1807,7 +1807,7 @@
   function ensureBoxNames(){
     const n = { product:0, unitplan:0, layout:0 };
     for (const b of state.boxes) {
-      if (!(b.kind in n)) continue;
+      if (!(b.kind in n) || b.isInstance) continue; // instances aren't listed, so don't consume a number
       n[b.kind]++;
       if (!b.name) b.name = KIND_LABEL[b.kind]+' '+n[b.kind];
     }
@@ -1830,7 +1830,7 @@
   const openFirst = (a,b) => (b.open?1:0) - (a.open?1:0);
   const productsListEl=document.getElementById('productsList');
   function buildProductsList(){
-    const products = state.boxes.filter(b=>b.kind==='product').sort(openFirst);
+    const products = state.boxes.filter(b=>b.kind==='product' && !b.isInstance).sort(openFirst);
     if(!products.length){ productsListEl.innerHTML=''; return; }
     productsListEl.innerHTML='';
     for(const bx of products){
@@ -1850,7 +1850,7 @@
   }
   const unitplansListEl=document.getElementById('unitplansList');
   function buildUnitplansList(){
-    const plans = state.boxes.filter(b=>b.kind==='unitplan').sort(openFirst);
+    const plans = state.boxes.filter(b=>b.kind==='unitplan' && !b.isInstance).sort(openFirst);
     if(!plans.length){ unitplansListEl.innerHTML=''; return; }
     unitplansListEl.innerHTML='';
     for(const bx of plans){
@@ -1872,7 +1872,7 @@
   }
   const layoutsListEl=document.getElementById('layoutsList');
   function buildLayoutsList(){
-    const layouts = state.boxes.filter(b=>b.kind==='layout').sort(openFirst);
+    const layouts = state.boxes.filter(b=>b.kind==='layout' && !b.isInstance).sort(openFirst);
     if(!layouts.length){ layoutsListEl.innerHTML=''; return; }
     layoutsListEl.innerHTML='';
     for(const bx of layouts){
@@ -2107,7 +2107,11 @@
       b.x1=fx(b.x1); b.x2=fx(b.x2); b.y1=fy(b.y1); b.y2=fy(b.y2);
       b.bind={x1:null,y1:null,x2:null,y2:null};
       b.open=false;
-      if (b.kind==='product'||b.kind==='unitplan'||b.kind==='layout') b.name=null; // a fresh instance, unnamed here
+      // an inserted copy is an instance, not a new master — it lives on the
+      // canvas but never gets its own Library/Insert entry (that would just
+      // let you keep chaining copies-of-copies-of-the-same-thing)
+      b.isInstance = true;
+      if (b.kind==='product'||b.kind==='unitplan'||b.kind==='layout') b.name=null;
     });
     data.grids.forEach(g=>{ g.id=idMap.get(g.id); g.boxId=remap(g.boxId); });
 
@@ -2170,7 +2174,7 @@
     insertTitleEl.textContent = kind ? `Insert: ${KIND_LABEL[kind]}` : 'Insert';
     insertListEl.innerHTML = '';
     if (!kind) return;
-    for (const bx of state.boxes.filter(b=>b.kind===kind)) {
+    for (const bx of state.boxes.filter(b=>b.kind===kind && !b.isInstance)) {
       const item=document.createElement('div');
       item.className='item'+(state.inserting&&state.inserting.sourceId===bx.id?' placing':'');
       const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
