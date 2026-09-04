@@ -42,7 +42,11 @@
   header h1 { font-size: 14px; font-weight: 600; letter-spacing: .3px; }
   header h1 span { color: var(--muted); font-weight: 400; }
 
-  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #toolbar {
+    display: flex; flex-direction: column; gap: 6px; align-items: stretch;
+    width: 92px; flex-shrink: 0; padding: 10px 8px; overflow-y: auto;
+    background: var(--panel); border-right: 1px solid var(--border);
+  }
   .tool {
     display: flex; flex-direction: column; align-items: center; gap: 3px;
     background: var(--panel-2);
@@ -52,7 +56,6 @@
     padding: 7px 11px;
     cursor: pointer;
     font-size: 11px;
-    min-width: 58px;
     transition: .12s;
   }
   .tool:hover { background: #383e4a; }
@@ -61,18 +64,7 @@
   .tool svg { width: 18px; height: 18px; }
   .sep { width: 1px; height: 34px; background: var(--border); margin: 0 4px; }
 
-  .btn {
-    background: var(--panel-2); border: 1px solid var(--border); color: var(--ink);
-    border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 12px;
-  }
-  .btn:hover { background: #383e4a; }
-  .spacer { flex: 1; }
-
   .field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-  .field input[type=number] {
-    width: 64px; background: var(--bg); border: 1px solid var(--border);
-    color: var(--ink); border-radius: 6px; padding: 5px 7px; font-size: 12px;
-  }
   .field input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); }
 
   #stage { position: relative; flex: 1; overflow: hidden; cursor: crosshair; }
@@ -126,13 +118,28 @@
 
   #main { display: flex; flex: 1; min-height: 0; }
   #tray {
-    width: 172px; flex-shrink: 0;
-    background: var(--panel); border-left: 1px solid var(--border);
-    display: flex; flex-direction: column;
+    width: 212px; flex-shrink: 0;
+    background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow-y: auto;
   }
-  #tray h3 { font-size: 12px; font-weight: 600; padding: 10px 12px 8px; color: var(--ink); }
-  #tray .list { flex: 1; overflow-y: auto; padding: 0 10px 10px; }
-  #tray .empty { color: var(--muted); font-size: 11px; padding: 4px 2px; line-height: 1.5; }
+  #tray h3 { font-size: 12px; font-weight: 600; padding: 12px 12px 8px; color: var(--ink); }
+  #tray .list { padding: 0 10px 4px; }
+  #tray .empty { color: var(--muted); font-size: 11px; padding: 4px 2px 10px; line-height: 1.5; }
+  #tray .row {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px;
+    background: var(--panel-2); padding: 7px 9px; cursor: pointer;
+  }
+  #tray .row:hover { border-color: var(--accent); }
+  #tray .row input[type=text] {
+    flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border);
+    color: var(--ink); border-radius: 6px; padding: 5px 7px; font-size: 12px;
+  }
+  #tray .row .nm2 {
+    flex: 1; min-width: 0; font-size: 12px; color: var(--ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #tray .row .nm2 .suffix { color: var(--muted); }
   #tray .item {
     border: 1px solid var(--border); border-radius: 8px; margin-bottom: 9px;
     background: var(--panel-2); cursor: pointer; overflow: hidden; position: relative;
@@ -155,7 +162,14 @@
   <header>
     <h1>Drafting Space <span>· Grids &amp; Walls</span></h1>
     <div class="sep"></div>
-    <div class="toolbar" id="toolbar">
+    <span class="field" title="Show/hide dimensions by the container they were drawn in">Dims:</span>
+    <label class="field" style="color:#3b82f6"><input id="showProductDims" type="checkbox" checked> Product</label>
+    <label class="field" style="color:#10b981"><input id="showUnitplanDims" type="checkbox" checked> Unit</label>
+    <label class="field" style="color:#d946ef"><input id="showLayoutDims" type="checkbox" checked> Layout</label>
+  </header>
+
+  <div id="main">
+    <div id="toolbar">
       <div class="tool active" data-tool="select" title="Select / move (V)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3l6 16 2-6 6-2z"/></svg>
         Select
@@ -172,8 +186,8 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
         Layout
       </div>
-      <div class="tool" data-tool="element" title="Element (N) — place a 1×1 element on an intersection/corner">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="6" width="12" height="12" fill="currentColor" stroke="none"/><circle cx="12" cy="18" r="2"/></svg>
+      <div class="tool" data-tool="element" title="Element (N) — place a toilet on an intersection/corner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="3" width="10" height="4.5" rx="1" fill="currentColor" stroke="none"/><ellipse cx="12" cy="15" rx="7" ry="6.2"/></svg>
         Element
       </div>
       <div class="tool" data-tool="grid" title="Draw grid line (G)">
@@ -205,33 +219,19 @@
         12&quot; Wall
       </div>
     </div>
-    <div class="sep"></div>
-    <label class="field" title="Spacing of the background snap grid, in feet">
-      Grid <input id="gridSize" type="number" value="2" min="0.25" step="0.25"> ft
-    </label>
-    <label class="field"><input id="snap" type="checkbox" checked> Snap</label>
-    <div class="sep"></div>
-    <span class="field" title="Show/hide dimensions by the container they were drawn in">Dims:</span>
-    <label class="field" style="color:#3b82f6"><input id="showProductDims" type="checkbox" checked> Product</label>
-    <label class="field" style="color:#10b981"><input id="showUnitplanDims" type="checkbox" checked> Unit</label>
-    <label class="field" style="color:#d946ef"><input id="showLayoutDims" type="checkbox" checked> Layout</label>
-    <div class="spacer"></div>
-    <button class="btn" id="saveLayoutBtn" title="Save the selected layout to the tray" disabled>Save layout</button>
-    <button class="btn" id="deleteBtn" title="Delete selected (Del)">Delete</button>
-    <button class="btn" id="clearBtn">Clear all</button>
-    <button class="btn" id="fitBtn" title="Reset view (Home)">Fit view</button>
-  </header>
-
-  <div id="main">
+    <div id="tray">
+      <h3>Products</h3>
+      <div class="list" id="productsList"></div>
+      <h3>Unit Plans</h3>
+      <div class="list" id="unitplansList"></div>
+      <h3>Saved Layouts</h3>
+      <div class="list" id="trayList"></div>
+    </div>
     <div id="stage">
       <canvas id="cv"></canvas>
       <div id="menu"></div>
       <div id="flexPanel"></div>
       <div id="hud"></div>
-    </div>
-    <div id="tray">
-      <h3>Saved Layouts</h3>
-      <div class="list" id="trayList"></div>
     </div>
   </div>
 </div>
@@ -699,7 +699,6 @@
     updateHud();
     updateFlexPanel();
     updateToolAvailability();
-    updateSaveBtn();
   }
 
   function drawBackgroundGrid(w, h) {
@@ -818,24 +817,50 @@
       y: P.y + lx*sa + ly*ca
     }));
   }
+  function roundRectPath(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x+r, y);
+    c.arcTo(x+w, y, x+w, y+h, r);
+    c.arcTo(x+w, y+h, x, y+h, r);
+    c.arcTo(x, y+h, x, y, r);
+    c.arcTo(x, y, x+w, y, r);
+    c.closePath();
+  }
+  // Top-down toilet plan symbol (tank + bowl) drawn into the element's local
+  // 1×1 ft unit square. Call with the canvas already translated to the
+  // insertion point, rotated by the element's angle, and scaled to px/ft —
+  // lineWidth is pre-divided by that scale so strokes stay a constant px width.
+  function drawToiletSymbol(c, { fill, stroke, lineWidth }) {
+    c.fillStyle = fill; c.strokeStyle = stroke; c.lineWidth = lineWidth;
+    const tankH = 0.22;
+    roundRectPath(c, -0.34, 0, 0.68, tankH, 0.03);
+    c.fill(); c.stroke();
+    c.beginPath(); c.ellipse(0, 0.60, 0.30, 0.36, 0, 0, Math.PI*2);
+    c.fill(); c.stroke();
+    c.beginPath();
+    c.moveTo(-0.10, tankH); c.lineTo(-0.10, tankH+0.06);
+    c.moveTo(0.10, tankH); c.lineTo(0.10, tankH+0.06);
+    c.stroke();
+  }
   function drawElements() {
     const ht = activeHover();
     const hoverElId = (ht && ht.kind==='element') ? ht.id : null;
     for (const el of state.elements) {
       const sel = state.selection && state.selection.kind==='element' && state.selection.id===el.id;
       const hov = el.id===hoverElId;
-      const cs = elementCorners(el).map(w2s);
-      ctx.beginPath();
-      ctx.moveTo(cs[0].x,cs[0].y);
-      for (let i=1;i<cs.length;i++) ctx.lineTo(cs[i].x,cs[i].y);
-      ctx.closePath();
-      ctx.fillStyle = sel ? '#9ec5ff' : '#c2c8d2';
-      ctx.fill();
-      ctx.strokeStyle = hov ? '#ffd54a' : (sel ? '#4c9aff' : '#6b7280');
-      ctx.lineWidth = hov ? 3 : (sel ? 1.8 : 1);
-      ctx.stroke();
-      // insertion / reference point (middle of a side)
       const P = w2s(endPos(el.ref));
+      const scale = ppfNow();
+      ctx.save();
+      ctx.translate(P.x, P.y);
+      ctx.rotate((el.rot||0) * Math.PI/180);
+      ctx.scale(scale, scale);
+      drawToiletSymbol(ctx, {
+        fill: sel ? '#9ec5ff' : '#c2c8d2',
+        stroke: hov ? '#ffd54a' : (sel ? '#4c9aff' : '#6b7280'),
+        lineWidth: (hov ? 3 : (sel ? 1.8 : 1)) / scale
+      });
+      ctx.restore();
+      // insertion / reference point (middle of a side)
       ctx.fillStyle = sel ? '#4c9aff' : '#1e2128';
       ctx.beginPath(); ctx.arc(P.x,P.y,3.5,0,Math.PI*2); ctx.fill();
       ctx.strokeStyle='#e6e9ef'; ctx.lineWidth=1; ctx.stroke();
@@ -1236,13 +1261,14 @@
         // unit plans must go in an open product; layouts in an open unit plan
         const ok = (kind==='product') || !!openHostFor(kind, {x:cx,y:cy}, null);
         if (ok) {
-          const bx = { id, kind,
+          const bx = { id, kind, name:null,
             x1:Math.min(drag.x1,drag.x2), y1:Math.min(drag.y1,drag.y2),
             x2:Math.max(drag.x1,drag.x2), y2:Math.max(drag.y1,drag.y2),
             parentId:null, open:false, bind:{x1:null,y1:null,x2:null,y2:null} };
           state.boxes.push(bx);
           rebindBox(bx); // attach to parent's grids/edges if applicable
           state.selection={kind:'box',id};
+          refreshTray();
         }
       }
     } else if (drag.kind === 'resizeBox') {
@@ -1604,14 +1630,6 @@
     const elements=state.elements.filter(el=>inRect(endPos(el.ref))).map(el=>{const p=endPos(el.ref);return{x:nx(p.x),y:ny(p.y),rot:el.rot||0};});
     return {w0:W, h0:H, grids, walls, elements};
   }
-  function saveSelectedLayout(){
-    const s=state.selection; if(!s||s.kind!=='box')return;
-    const box=findById(state.boxes,s.id); if(!box||box.kind!=='layout')return;
-    const name=(prompt('Name this layout:', 'Layout '+(state.savedLayouts.length+1))||'').trim();
-    if(!name)return;
-    state.savedLayouts.push({ id:uid(), name, ...captureTemplate(box) });
-    buildTray();
-  }
   // Render a template into a small preview canvas.
   function drawTemplateThumb(canvas, tpl){
     const c=canvas.getContext('2d'), cw=canvas.width, ch=canvas.height, pad=8;
@@ -1629,13 +1647,18 @@
       const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1, hpx=Math.max(1.4,w.thk*sc/2), nx=-dy/len*hpx, ny=dx/len*hpx;
       c.fillStyle='#e6e9ef'; c.beginPath(); c.moveTo(ax+nx,ay+ny);c.lineTo(bx+nx,by+ny);c.lineTo(bx-nx,by-ny);c.lineTo(ax-nx,ay-ny);c.closePath();c.fill();
       c.strokeStyle='#5b6472';c.lineWidth=0.6;c.stroke(); }
-    for(const el of tpl.elements){ const a=(el.rot||0)*Math.PI/180,ca=Math.cos(a),sa=Math.sin(a);
-      const pts=[[-0.5,0],[0.5,0],[0.5,1],[-0.5,1]].map(([lx,ly])=>({x:SX(el.x*tpl.w0+lx*ca-ly*sa), y:SY(el.y*tpl.h0+lx*sa+ly*ca)}));
-      c.fillStyle='#c2c8d2'; c.beginPath(); c.moveTo(pts[0].x,pts[0].y); for(let i=1;i<4;i++)c.lineTo(pts[i].x,pts[i].y); c.closePath(); c.fill(); }
+    for(const el of tpl.elements){
+      c.save();
+      c.translate(SX(el.x*tpl.w0), SY(el.y*tpl.h0));
+      c.rotate((el.rot||0)*Math.PI/180);
+      c.scale(sc, sc);
+      drawToiletSymbol(c, { fill:'#c2c8d2', stroke:'#6b7280', lineWidth: 1/sc });
+      c.restore();
+    }
   }
   const trayList=document.getElementById('trayList');
-  function buildTray(){
-    if(!state.savedLayouts.length){ trayList.innerHTML='<div class="empty">Select a Layout and click “Save layout”. Then click a saved layout and pick four edges to place it.</div>'; return; }
+  function buildSavedLayoutsList(){
+    if(!state.savedLayouts.length){ trayList.innerHTML='<div class="empty">Close a Layout boundary to save it here. Then click a saved layout and pick four edges to place it.</div>'; return; }
     trayList.innerHTML='';
     for(const tpl of state.savedLayouts){
       const item=document.createElement('div');
@@ -1644,12 +1667,57 @@
       const nm=document.createElement('div'); nm.className='nm'; nm.textContent=tpl.name; item.appendChild(nm);
       const del=document.createElement('div'); del.className='del'; del.textContent='×'; del.title='Delete'; item.appendChild(del);
       item.addEventListener('click', e=>{ if(e.target===del)return; startPlacing(tpl.id); });
-      del.addEventListener('click', e=>{ e.stopPropagation(); state.savedLayouts=state.savedLayouts.filter(t=>t.id!==tpl.id); if(state.placing&&state.placing.templateId===tpl.id)state.placing=null; buildTray(); draw(); });
+      del.addEventListener('click', e=>{ e.stopPropagation(); state.savedLayouts=state.savedLayouts.filter(t=>t.id!==tpl.id); if(state.placing&&state.placing.templateId===tpl.id)state.placing=null; buildSavedLayoutsList(); draw(); });
       trayList.appendChild(item);
       drawTemplateThumb(cv2, tpl);
     }
   }
-  function startPlacing(id){ state.placing={templateId:id, picks:[]}; setTool('select'); buildTray(); draw(); }
+  // Products always show, named inline in the tray (no default UI to name them
+  // elsewhere). New products get a numbered default so the field is never blank.
+  function ensureProductNames(){
+    let n=0;
+    for(const b of state.boxes) if(b.kind==='product'){ n++; if(!b.name) b.name='Product '+n; }
+  }
+  function productDisplayName(bx){ return bx.name || 'Product'; }
+  // A unit plan's name is "<user chosen name>_<name of the product it's in>" —
+  // the product half just mirrors the parent and isn't itself editable here.
+  function unitplanDisplayName(bx){
+    const parent = bx.parentId!=null ? findById(state.boxes, bx.parentId) : null;
+    const productName = (parent && parent.kind==='product') ? productDisplayName(parent) : 'Product';
+    return { prefix: bx.name, suffix: '_'+productName };
+  }
+  const productsListEl=document.getElementById('productsList');
+  function buildProductsList(){
+    const products = state.boxes.filter(b=>b.kind==='product');
+    if(!products.length){ productsListEl.innerHTML='<div class="empty">Draw a Product boundary to name it here.</div>'; return; }
+    productsListEl.innerHTML='';
+    for(const bx of products){
+      const row=document.createElement('div'); row.className='row';
+      const inp=document.createElement('input'); inp.type='text'; inp.value=bx.name||'';
+      inp.addEventListener('click', e=>e.stopPropagation());
+      inp.addEventListener('input', ()=>{ bx.name=inp.value; buildUnitplansList(); });
+      row.appendChild(inp);
+      row.addEventListener('click', ()=>{ state.selection={kind:'box',id:bx.id}; draw(); });
+      productsListEl.appendChild(row);
+    }
+  }
+  const unitplansListEl=document.getElementById('unitplansList');
+  function buildUnitplansList(){
+    const plans = state.boxes.filter(b=>b.kind==='unitplan' && b.name);
+    if(!plans.length){ unitplansListEl.innerHTML='<div class="empty">Close a Unit Plan to name & track it here.</div>'; return; }
+    unitplansListEl.innerHTML='';
+    for(const bx of plans){
+      const {prefix,suffix} = unitplanDisplayName(bx);
+      const row=document.createElement('div'); row.className='row';
+      const nm=document.createElement('div'); nm.className='nm2';
+      nm.textContent=prefix; const sp=document.createElement('span'); sp.className='suffix'; sp.textContent=suffix; nm.appendChild(sp);
+      row.appendChild(nm);
+      row.addEventListener('click', ()=>{ state.selection={kind:'box',id:bx.id}; draw(); });
+      unitplansListEl.appendChild(row);
+    }
+  }
+  function refreshTray(){ ensureProductNames(); buildProductsList(); buildUnitplansList(); buildSavedLayoutsList(); }
+  function startPlacing(id){ state.placing={templateId:id, picks:[]}; setTool('select'); buildSavedLayoutsList(); draw(); }
   function tryFinalizePlacement(){
     const vert=state.placing.picks.filter(p=>p.axis==='h'); // vertical edges → x
     const horz=state.placing.picks.filter(p=>p.axis==='v'); // horizontal edges → y
@@ -1657,7 +1725,7 @@
       const vs=[...vert].sort((a,b)=>a.coord-b.coord), hs=[...horz].sort((a,b)=>a.coord-b.coord);
       createPlacedLayout(findById(state.savedLayouts,state.placing.templateId),
         { x1:vs[0].ref, x2:vs[vs.length-1].ref, y1:hs[0].ref, y2:hs[hs.length-1].ref });
-      state.placing=null; buildTray();
+      state.placing=null; buildSavedLayoutsList();
     }
   }
   function createPlacedLayout(tpl, refs){
@@ -1681,11 +1749,16 @@
         if(g.type==='v'){const a=w2s({x:e.x1+g.t*W,y:e.y1}),b=w2s({x:e.x1+g.t*W,y:e.y2});ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);}
         else{const a=w2s({x:e.x1,y:e.y1+g.t*H}),b=w2s({x:e.x2,y:e.y1+g.t*H});ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);} ctx.stroke(); }
       ctx.setLineDash([]);
-      for(const el of box.template.elements){ const P={x:e.x1+el.x*W, y:e.y1+el.y*H};
-        const a=(el.rot||0)*Math.PI/180,ca=Math.cos(a),sa=Math.sin(a);
-        const cs=[[-0.5,0],[0.5,0],[0.5,1],[-0.5,1]].map(([lx,ly])=>w2s({x:P.x+lx*ca-ly*sa,y:P.y+lx*sa+ly*ca}));
-        ctx.beginPath();ctx.moveTo(cs[0].x,cs[0].y);for(let i=1;i<4;i++)ctx.lineTo(cs[i].x,cs[i].y);ctx.closePath();
-        ctx.fillStyle='#c2c8d2';ctx.fill();ctx.strokeStyle='#6b7280';ctx.lineWidth=1;ctx.stroke(); }
+      for(const el of box.template.elements){
+        const P = w2s({x:e.x1+el.x*W, y:e.y1+el.y*H});
+        const scale = ppfNow();
+        ctx.save();
+        ctx.translate(P.x, P.y);
+        ctx.rotate((el.rot||0)*Math.PI/180);
+        ctx.scale(scale, scale);
+        drawToiletSymbol(ctx, { fill:'#c2c8d2', stroke:'#6b7280', lineWidth: 1/scale });
+        ctx.restore();
+      }
     }
   }
   // Highlight picked/candidate edges while placing a saved layout.
@@ -1698,10 +1771,6 @@
     for(const p of state.placing.picks) drawRef(p.ref,true);
     const pk=pickReference(mouseWRaw,null); if(pk && !state.placing.picks.some(p=>sameRef(p.ref,pk.ref))) drawRef(pk.ref,false);
   }
-  function updateSaveBtn(){
-    const s=state.selection, b=s&&s.kind==='box'?findById(state.boxes,s.id):null;
-    document.getElementById('saveLayoutBtn').disabled = !(b && b.kind==='layout');
-  }
 
   function hideBoxMenu(){ menuEl.style.display='none'; }
   function showBoxMenu(x, y, boxId){
@@ -1711,7 +1780,7 @@
     // child still inside it (close the inner one first)
     const lockedOpen = bx.open && boxHasOpenDescendant(bx);
     const items = [
-      { label: bx.open ? 'Close' : 'Open', sc:'', disabled: lockedOpen, act:()=>{ if(bx.open) bx.open=false; else openWithAncestors(bx); } },
+      { label: bx.open ? 'Close' : 'Open', sc:'', disabled: lockedOpen, act:()=>{ if(bx.open) closeBoundary(bx); else openWithAncestors(bx); } },
       { label: 'Copy', sc:'Ctrl+C', act:()=>copyBox(boxId) },
       { label: 'Paste', sc:'Ctrl+V', act:()=>pasteClipboard(s2w({x,y})), disabled:!clipboard },
       { divider:true },
@@ -1819,6 +1888,8 @@
       b.x1+=dx; b.x2+=dx; b.y1+=dy; b.y2+=dy;
       if (b.bind) for (const k in b.bind) b.bind[k]=remapRef(b.bind[k]);
       b.open=false;
+      // a paste is a fresh instance — it hasn't been named/closed here yet
+      if (b.kind==='product') b.name=null; else if (b.kind==='unitplan') b.name=null;
     });
     data.grids.forEach(g=>{
       g.id=idMap.get(g.id);
@@ -1829,6 +1900,7 @@
     state.gridlines.push(...data.grids);
     relabelGrid();
     state.selection={kind:'box', id:data.boxes[0].id};
+    refreshTray();
     draw();
   }
 
@@ -1872,6 +1944,20 @@
     let p = bx.parentId;
     while (p != null) { const pb = findById(state.boxes, p); if (!pb) break; pb.open = true; p = pb.parentId; }
   }
+  // Closing a Layout offers to save it to the tray as a reusable template;
+  // closing a Unit Plan offers to name it so it's tracked in the tray. Leaving
+  // the prompt blank (or cancelling) just closes the boundary, nothing more.
+  function closeBoundary(bx){
+    bx.open = false;
+    if (bx.kind === 'layout') {
+      const name = (prompt('Save this layout to the tray? Name it (leave blank to skip):', 'Layout '+(state.savedLayouts.length+1)) || '').trim();
+      if (name) { state.savedLayouts.push({ id:uid(), name, ...captureTemplate(bx) }); refreshTray(); }
+    } else if (bx.kind === 'unitplan') {
+      const count = state.boxes.filter(b=>b.kind==='unitplan').length;
+      const name = (prompt('Name this unit plan (leave blank to skip):', bx.name || ('Unit Plan '+count)) || '').trim();
+      if (name) { bx.name = name; refreshTray(); }
+    }
+  }
   // Enable only the drawable boundary tool; grey out the others.
   function updateToolAvailability(){
     const drawable = drawableBoundaryKind();
@@ -1891,21 +1977,9 @@
   }
   function updateTip(){ /* instructions bubble removed */ }
 
-  document.getElementById('gridSize').addEventListener('input', e=>{
-    state.gridSpacing=Math.max(0.25, parseFloat(e.target.value)||2); draw();
-  });
-  document.getElementById('snap').addEventListener('change', e=>{ state.snap=e.target.checked; });
   document.getElementById('showProductDims').addEventListener('change', e=>{ state.showDims.product=e.target.checked; draw(); });
   document.getElementById('showUnitplanDims').addEventListener('change', e=>{ state.showDims.unitplan=e.target.checked; draw(); });
   document.getElementById('showLayoutDims').addEventListener('change', e=>{ state.showDims.layout=e.target.checked; draw(); });
-  document.getElementById('deleteBtn').addEventListener('click', deleteSelection);
-  document.getElementById('saveLayoutBtn').addEventListener('click', saveSelectedLayout);
-  document.getElementById('clearBtn').addEventListener('click', ()=>{
-    if(confirm('Clear everything on the sheet?')){
-      state.gridlines=[];state.walls=[];state.dims=[];state.boxes=[];state.elements=[];state.selection=null;draw();
-    }
-  });
-  document.getElementById('fitBtn').addEventListener('click', fitView);
 
   // Freeze every wall endpoint at its current resolved position. Call before
   // removing grids/boxes so anchored walls stay put instead of jumping back.
@@ -1947,6 +2021,7 @@
       clearRefsTo(boxIds, gridIds); // edges/endpoints bound to removed features go free
       state.boxes = state.boxes.filter(b=>!boxIds.has(b.id));
       relabelGrid();
+      refreshTray();
     }
     state.selection=null; draw();
   }
@@ -2010,7 +2085,7 @@
     else if(k==='e')setTool('eqdim');
     else if(k==='f')setTool('flexdim');
     else if(e.key==='Delete'||e.key==='Backspace')deleteSelection();
-    else if(e.key==='Escape'){drag=null;dimBuild=null;state.placing=null;state.selection=null;buildTray();draw();}
+    else if(e.key==='Escape'){drag=null;dimBuild=null;state.placing=null;state.selection=null;buildSavedLayoutsList();draw();}
     else if(e.key==='Home')fitView();
   });
   window.addEventListener('keyup', e=>{
@@ -2024,7 +2099,7 @@
     state.view={x:80,y:70,scale:1};
   }
   seed();
-  buildTray();
+  refreshTray();
   resize();
   setTool('select');
   fitView();
