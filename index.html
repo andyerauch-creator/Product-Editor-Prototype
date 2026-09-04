@@ -2198,15 +2198,17 @@
   const trayEl = document.getElementById('tray');
   const toggleLibraryBtn = document.getElementById('toggleLibraryBtn');
   const toggleInsertBtn = document.getElementById('toggleInsertBtn');
-  toggleLibraryBtn.addEventListener('click', ()=>{
-    trayEl.hidden = !trayEl.hidden;
-    toggleLibraryBtn.classList.toggle('active', !trayEl.hidden);
-  });
-  toggleInsertBtn.addEventListener('click', ()=>{
-    insertPanelEl.hidden = !insertPanelEl.hidden;
-    toggleInsertBtn.classList.toggle('active', !insertPanelEl.hidden);
-    if (!insertPanelEl.hidden) buildInsertList();
-  });
+  // Library and Insert share one slot — opening one closes the other, and
+  // clicking the active one closes it, leaving just the toolbar and canvas.
+  function setSidePanel(which){
+    trayEl.hidden = which!=='library';
+    insertPanelEl.hidden = which!=='insert';
+    toggleLibraryBtn.classList.toggle('active', which==='library');
+    toggleInsertBtn.classList.toggle('active', which==='insert');
+    if (which==='insert') buildInsertList();
+  }
+  toggleLibraryBtn.addEventListener('click', ()=>setSidePanel(trayEl.hidden ? 'library' : 'none'));
+  toggleInsertBtn.addEventListener('click', ()=>setSidePanel(insertPanelEl.hidden ? 'insert' : 'none'));
   function setTool(name){
     // boundary tools are only usable when their kind is the drawable one
     if (['product','unitplan','layout'].includes(name) && name!==drawableBoundaryKind()) return;
