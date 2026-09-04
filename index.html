@@ -1805,6 +1805,16 @@
       draw(c, { fill:'#c2c8d2', stroke:'#6b7280', lineWidth: 1/sc }, w, h);
       c.restore();
     }
+    // dimension lines that belong to this box or one of its descendants —
+    // just the line itself at this size, no arrows/ticks/label text
+    c.strokeStyle='#ffb454'; c.lineWidth=1; c.setLineDash([3,2]);
+    for(const d of state.dims){
+      if(!owned(d.containerId)) continue;
+      const ep = dimLineEndpoints(d);
+      if(!ep) continue;
+      c.beginPath(); c.moveTo(SX(ep[0].x),SY(ep[0].y)); c.lineTo(SX(ep[1].x),SY(ep[1].y)); c.stroke();
+    }
+    c.setLineDash([]);
   }
   // ---- Local persistence -----------------------------------------------------
   // Everything lives in one browser-local save file (grids/walls/dims all
