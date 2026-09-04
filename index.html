@@ -162,6 +162,18 @@
     flex: 1; background: var(--panel); border: 1px solid var(--border); color: var(--ink);
     border-radius: 6px; padding: 5px 0; font-size: 10.5px; cursor: pointer;
   }
+  /* Library tree: an original's card sits in a row with an expand caret;
+     its branches (if expanded) nest in an indented column underneath. */
+  .panel .item-row { display: flex; align-items: flex-start; gap: 6px; }
+  .panel .item-row .item { flex: 1; min-width: 0; }
+  .panel .caret {
+    flex-shrink: 0; width: 20px; height: 20px; margin-top: 2px; padding: 0;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px;
+    color: var(--muted); cursor: pointer; font-size: 10px; line-height: 1;
+  }
+  .panel .caret:hover { border-color: var(--accent); color: var(--ink); }
+  .panel .caret-spacer { flex-shrink: 0; width: 20px; }
+  .panel .branches { margin: -3px 0 9px 26px; padding-left: 8px; border-left: 1px solid var(--border); }
   .panel .item .actions button:hover { background: #383e4a; }
   .panel .item .actions button.save { border-color: var(--accent); color: #9ec5ff; }
   .panel .item .actions button.danger { color: #ff8a8a; }
@@ -309,6 +321,8 @@
     archived: [], // [{id, kind, name, snapshot}] — boundaries deleted from the
                   // canvas, kept as reusable masters (Library/Insert still list
                   // them, and you can still place fresh instances of them)
+    libraryExpanded: new Set(), // root box/archived ids currently showing their
+                  // branches in the Library — UI-only, not persisted
   };
   let nextId = 1;
   const uid = () => nextId++;
@@ -2005,14 +2019,6 @@
       if (!b.name) b.name = KIND_LABEL[b.kind]+' '+n[b.kind];
     }
   }
-  function productDisplayName(bx){ return bx.name || 'Product'; }
-  // A unit plan's name is "<user chosen name>_<name of the product it's in>" —
-  // the product half just mirrors the parent and isn't itself editable here.
-  function unitplanDisplayName(bx){
-    const parent = bx.parentId!=null ? findById(state.boxes, bx.parentId) : null;
-    const productName = (parent && parent.kind==='product') ? productDisplayName(parent) : 'Product';
-    return { prefix: bx.name, suffix: '_'+productName };
-  }
   // Delete a live Product/Unit Plan/Layout boundary from the Library — this
   // is the one place a boundary is actually, permanently gone (no archive):
   // deleting it from the canvas itself archives a reusable copy instead,
@@ -2031,94 +2037,95 @@
     saveStateToStorage();
     draw();
   }
-  // Currently-open boundaries sort to the top of their list.
-  const openFirst = (a,b) => (b.open?1:0) - (a.open?1:0);
-  // A card for a boundary deleted from the canvas — still nameable, still
-  // insertable, just previewed from its frozen snapshot instead of live
-  // state, and flagged so it's clear it isn't actually on the canvas.
-  function buildArchivedCard(a){
-    const item=document.createElement('div'); item.className='item archived';
+  // One card, for either a live box or an archived entry — used for both the
+  // original ("root") row and every branch row nested under it.
+  function buildLibraryItem(kind, entry){
+    const { live, obj } = entry;
+    const item=document.createElement('div');
+    item.className='item'+(live && obj.open?' open':'')+(!live?' archived':'');
     const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
     const nm=document.createElement('div'); nm.className='nm';
-    const inp=document.createElement('input'); inp.type='text'; inp.value=a.name||'';
-    inp.placeholder='Name this '+KIND_LABEL[a.kind].toLowerCase();
+    const inp=document.createElement('input'); inp.type='text'; inp.value=obj.name||'';
+    inp.placeholder='Name this '+KIND_LABEL[kind].toLowerCase();
     inp.addEventListener('click', e=>e.stopPropagation());
-    inp.addEventListener('input', ()=>{ a.name=inp.value; });
-    const tag=document.createElement('span'); tag.className='suffix'; tag.textContent='not on canvas';
-    nm.appendChild(inp); nm.appendChild(tag);
+    inp.addEventListener('input', ()=>{ obj.name=inp.value; });
+    nm.appendChild(inp);
+    if (!live) { const tag=document.createElement('span'); tag.className='suffix'; tag.textContent='not on canvas'; nm.appendChild(tag); }
     item.appendChild(nm);
-    item.appendChild(makeActionsRow(()=>deleteArchivedMaster(a.id)));
-    drawSnapshotThumb(cv2, a.snapshot);
+    item.appendChild(makeActionsRow(()=> live ? deleteBoundary(obj.id) : deleteArchivedMaster(obj.id)));
+    item.addEventListener('click', e=>{
+      if(e.target===inp||e.target.closest('.actions'))return;
+      if (live) { state.selection={kind:'box',id:obj.id}; draw(); }
+    });
+    if (live) drawLiveThumb(cv2, obj); else drawSnapshotThumb(cv2, obj.snapshot);
     return item;
   }
+  // Group every live box + archived entry of a kind into families: a root
+  // (never branched — rootId is null, or its own rootId points nowhere
+  // resolvable) plus every branch descended from it, however many
+  // generations of "branch of a branch" removed — branches always store the
+  // very first original's id, so this is a flat one-level grouping, never a
+  // deeper tree.
+  function buildLibraryGroups(kind){
+    const byId = new Map();
+    for (const b of state.boxes) if (b.kind===kind && !b.isInstance) byId.set(b.id, {live:true, obj:b});
+    for (const a of state.archived) if (a.kind===kind) byId.set(a.id, {live:false, obj:a});
+    const groups = new Map(); // rootId -> {root, branches:[]}
+    const groupFor = id => { let g=groups.get(id); if(!g){ g={root:null, branches:[]}; groups.set(id,g);} return g; };
+    for (const entry of byId.values()) {
+      const rid = entry.obj.rootId;
+      if (rid==null || !byId.has(rid)) groupFor(entry.obj.id).root = entry; // no root, or a dangling one — stands alone
+      else groupFor(rid).branches.push(entry);
+    }
+    const list = [...groups.values()].filter(g=>g.root);
+    list.sort((a,b)=>{
+      const ao=a.root.live&&a.root.obj.open, bo=b.root.live&&b.root.obj.open;
+      if (ao!==bo) return ao?-1:1;
+      return (a.root.obj.name||'').localeCompare(b.root.obj.name||'');
+    });
+    for (const g of list) g.branches.sort((x,y)=>(x.obj.name||'').localeCompare(y.obj.name||''));
+    return list;
+  }
+  // Render one kind's whole tree: a root card per family, with a caret that
+  // expands to show its branches nested underneath (collapsed by default).
+  function buildKindList(kind, listEl){
+    const groups = buildLibraryGroups(kind);
+    listEl.innerHTML='';
+    for (const g of groups) {
+      const wrap=document.createElement('div'); wrap.className='item-group';
+      const row=document.createElement('div'); row.className='item-row';
+      const rootKey=g.root.obj.id;
+      if (g.branches.length) {
+        const caret=document.createElement('button'); caret.type='button'; caret.className='caret';
+        const expanded = state.libraryExpanded.has(rootKey);
+        caret.textContent = expanded ? '▾' : '▸';
+        caret.title = (expanded?'Hide ':'Show ')+g.branches.length+' branch'+(g.branches.length>1?'es':'');
+        caret.addEventListener('click', e=>{
+          e.stopPropagation();
+          if (state.libraryExpanded.has(rootKey)) state.libraryExpanded.delete(rootKey);
+          else state.libraryExpanded.add(rootKey);
+          buildKindList(kind, listEl);
+        });
+        row.appendChild(caret);
+      } else {
+        const spacer=document.createElement('span'); spacer.className='caret-spacer'; row.appendChild(spacer);
+      }
+      row.appendChild(buildLibraryItem(kind, g.root));
+      wrap.appendChild(row);
+      if (g.branches.length && state.libraryExpanded.has(rootKey)) {
+        const branchesEl=document.createElement('div'); branchesEl.className='branches';
+        for (const br of g.branches) branchesEl.appendChild(buildLibraryItem(kind, br));
+        wrap.appendChild(branchesEl);
+      }
+      listEl.appendChild(wrap);
+    }
+  }
   const productsListEl=document.getElementById('productsList');
-  function buildProductsList(){
-    const products = state.boxes.filter(b=>b.kind==='product' && !b.isInstance).sort(openFirst);
-    const archived = state.archived.filter(a=>a.kind==='product');
-    if(!products.length && !archived.length){ productsListEl.innerHTML=''; return; }
-    productsListEl.innerHTML='';
-    for(const bx of products){
-      const item=document.createElement('div'); item.className='item'+(bx.open?' open':'');
-      const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
-      const nm=document.createElement('div'); nm.className='nm';
-      const inp=document.createElement('input'); inp.type='text'; inp.value=bx.name||''; inp.placeholder='Name this product';
-      inp.addEventListener('click', e=>e.stopPropagation());
-      inp.addEventListener('input', ()=>{ bx.name=inp.value; buildUnitplansList(); });
-      nm.appendChild(inp);
-      item.appendChild(nm);
-      item.appendChild(makeActionsRow(()=>deleteBoundary(bx.id)));
-      item.addEventListener('click', e=>{ if(e.target===inp||e.target.closest('.actions'))return; state.selection={kind:'box',id:bx.id}; draw(); });
-      productsListEl.appendChild(item);
-      drawLiveThumb(cv2, bx);
-    }
-    for(const a of archived) productsListEl.appendChild(buildArchivedCard(a));
-  }
+  function buildProductsList(){ buildKindList('product', productsListEl); }
   const unitplansListEl=document.getElementById('unitplansList');
-  function buildUnitplansList(){
-    const plans = state.boxes.filter(b=>b.kind==='unitplan' && !b.isInstance).sort(openFirst);
-    const archived = state.archived.filter(a=>a.kind==='unitplan');
-    if(!plans.length && !archived.length){ unitplansListEl.innerHTML=''; return; }
-    unitplansListEl.innerHTML='';
-    for(const bx of plans){
-      const {prefix,suffix} = unitplanDisplayName(bx);
-      const item=document.createElement('div'); item.className='item'+(bx.open?' open':'');
-      const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
-      const nm=document.createElement('div'); nm.className='nm';
-      const inp=document.createElement('input'); inp.type='text'; inp.value=prefix; inp.placeholder='Name this unit plan';
-      inp.addEventListener('click', e=>e.stopPropagation());
-      inp.addEventListener('input', ()=>{ bx.name=inp.value; });
-      const sp=document.createElement('span'); sp.className='suffix'; sp.textContent=suffix;
-      nm.appendChild(inp); nm.appendChild(sp);
-      item.appendChild(nm);
-      item.appendChild(makeActionsRow(()=>deleteBoundary(bx.id)));
-      item.addEventListener('click', e=>{ if(e.target===inp||e.target.closest('.actions'))return; state.selection={kind:'box',id:bx.id}; draw(); });
-      unitplansListEl.appendChild(item);
-      drawLiveThumb(cv2, bx);
-    }
-    for(const a of archived) unitplansListEl.appendChild(buildArchivedCard(a));
-  }
+  function buildUnitplansList(){ buildKindList('unitplan', unitplansListEl); }
   const layoutsListEl=document.getElementById('layoutsList');
-  function buildLayoutsList(){
-    const layouts = state.boxes.filter(b=>b.kind==='layout' && !b.isInstance).sort(openFirst);
-    const archived = state.archived.filter(a=>a.kind==='layout');
-    if(!layouts.length && !archived.length){ layoutsListEl.innerHTML=''; return; }
-    layoutsListEl.innerHTML='';
-    for(const bx of layouts){
-      const item=document.createElement('div'); item.className='item'+(bx.open?' open':'');
-      const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
-      const nm=document.createElement('div'); nm.className='nm';
-      const inp=document.createElement('input'); inp.type='text'; inp.value=bx.name||''; inp.placeholder='Name this layout';
-      inp.addEventListener('click', e=>e.stopPropagation());
-      inp.addEventListener('input', ()=>{ bx.name=inp.value; });
-      nm.appendChild(inp);
-      item.appendChild(nm);
-      item.appendChild(makeActionsRow(()=>deleteBoundary(bx.id)));
-      item.addEventListener('click', e=>{ if(e.target===inp||e.target.closest('.actions'))return; state.selection={kind:'box',id:bx.id}; draw(); });
-      layoutsListEl.appendChild(item);
-      drawLiveThumb(cv2, bx);
-    }
-    for(const a of archived) layoutsListEl.appendChild(buildArchivedCard(a));
-  }
+  function buildLayoutsList(){ buildKindList('layout', layoutsListEl); }
   // Only the section matching what you currently have open is shown — the
   // rest hide, so the Library always tracks the level you're working at.
   function updateTrayVisibility(){
@@ -2141,17 +2148,25 @@
     // you can only close the container you're working in — not one with an open
     // child still inside it (close the inner one first)
     const lockedOpen = bx.open && boxHasOpenDescendant(bx);
-    // Closing a box that's part of a lineage (an instance of a master, or a
-    // master other instances point back to) asks which way to save; closing
-    // anything else is just a plain close, nothing to diverge.
+    // Closing a placed instance (masterId set) asks which way to save: push
+    // the edit to main, or split it off as its own branch. Closing something
+    // that merely HAS instances (but isn't one itself — e.g. reopening the
+    // original) only offers to push to main, since there's nothing to branch
+    // without duplicating a box that already has its own canvas position.
+    // Anything with no lineage at all is just a plain close.
     const closeItems = !bx.open
       ? [{ label:'Open', sc:'', disabled:lockedOpen, act:()=>openWithAncestors(bx) }]
-      : boxLineage(bx)
+      : bx.masterId!=null
         ? [
             { label:'Close and save to main', sc:'', disabled:lockedOpen, act:()=>{ saveToMain(bx.id); closeBoundary(bx); } },
             { label:'Close and create branch', sc:'', disabled:lockedOpen, act:()=>{ saveAsBranch(bx.id); closeBoundary(bx); } },
           ]
-        : [{ label:'Close', sc:'', disabled:lockedOpen, act:()=>closeBoundary(bx) }];
+        : hasLiveInstances(bx.id)
+          ? [
+              { label:'Close and save to main', sc:'', disabled:lockedOpen, act:()=>{ saveToMain(bx.id); closeBoundary(bx); } },
+              { label:'Close', sc:'', disabled:lockedOpen, act:()=>closeBoundary(bx) },
+            ]
+          : [{ label:'Close', sc:'', disabled:lockedOpen, act:()=>closeBoundary(bx) }];
     const items = [
       ...closeItems,
       { label: 'Copy', sc:'Ctrl+C', act:()=>copyBox(boxId) },
@@ -2405,14 +2420,17 @@
     const rootBox = findById(data.boxes, rootId);
     if (existingBox) {
       // replacing an existing box's contents — keep its own identity
-      // (position, parent, binding, name, instance/master status) exactly
-      // as it was; only the stuff inside it is new
+      // (position, parent, binding, name, instance/master status, and its
+      // place in the Library's branch family tree) exactly as it was; only
+      // the stuff inside it is new
       rootBox.parentId = existingBox.parentId;
       rootBox.bind = existingBox.bind;
       rootBox.open = existingBox.open;
       rootBox.isInstance = existingBox.isInstance;
       rootBox.masterId = existingBox.masterId;
       rootBox.name = existingBox.name;
+      rootBox.rootId = existingBox.rootId;
+      rootBox.branchCount = existingBox.branchCount;
       Object.assign(existingBox, rootBox);
     } else {
       const ac = activeContainer();
@@ -2425,6 +2443,11 @@
       // every other instance sharing the same master ("save to main")
       // instead of always branching off silently independent
       rootBox.masterId = sourceId;
+      // a fresh instance has no branch identity of its own yet — if it's
+      // later closed and branched, saveAsBranch works out its family from
+      // masterId, not from any rootId the source happened to carry
+      rootBox.rootId = null;
+      rootBox.branchCount = undefined;
     }
 
     // Boxes/grids go live now, before anything below needs to resolve
@@ -2643,7 +2666,26 @@
   // (masterId set) or is itself a master other live instances point back to
   // — only then does closing it need to ask which way to save.
   function hasLiveInstances(id){ return state.boxes.some(b=>b.masterId===id); }
-  function boxLineage(bx){ return bx.masterId!=null || hasLiveInstances(bx.id); }
+  // The nearest ancestor Product's name (or null if there isn't one — a
+  // top-level Product has no parent to be tagged with).
+  function nearestProductName(box){
+    let p = box.parentId!=null ? findById(state.boxes, box.parentId) : null;
+    while (p && p.kind!=='product') p = p.parentId!=null ? findById(state.boxes, p.parentId) : null;
+    return p ? (p.name || 'Product') : null;
+  }
+  // The family's original, un-branched root — live or archived — that `box`
+  // (a placed instance, i.e. box.masterId is set) ultimately descends from.
+  // A branch remembers its own rootId so this never has to walk more than
+  // one hop: branching off a branch still resolves straight to the very
+  // first original, never to the intermediate branch.
+  function familyRoot(box){
+    if (box.masterId==null) return null;
+    const m = findById(state.boxes, box.masterId) || findById(state.archived, box.masterId);
+    if (!m) return null; // master fully gone — this branch becomes its own root
+    const rid = m.rootId!=null ? m.rootId : m.id;
+    const obj = findById(state.boxes, rid) || findById(state.archived, rid);
+    return obj ? { id:rid, obj } : null;
+  }
   // "Close and save to main": push this box's current (just-edited) content
   // up into the master it belongs to (whether that's itself already, a live
   // box elsewhere, or an archived Library entry), then push that same
@@ -2669,12 +2711,24 @@
     saveStateToStorage();
   }
   // "Close and create branch": detach this specific placement from its
-  // lineage — it keeps the edits you just made, becomes its own independent
-  // master going forward, and nothing else on the canvas (or in the
-  // Library) changes.
+  // lineage — it keeps the edits you just made and becomes its own Library
+  // entry going forward, named "<original name>_<n>_<product it's in>" where
+  // <n> is the next branch number for the WHOLE family (shared with, and
+  // incremented by, every other branch ever made from this same original —
+  // stored on the original itself so numbering never restarts partway
+  // through a chain of branches-of-branches). It's filed in the Library
+  // under that original, never under the branch it happened to come from.
   function saveAsBranch(boxId){
     const box = findById(state.boxes, boxId);
     if (!box) return;
+    const root = familyRoot(box);
+    const rootId = root ? root.id : box.id;
+    const rootObj = root ? root.obj : box;
+    rootObj.branchCount = (rootObj.branchCount || 1) + 1;
+    const baseName = rootObj.name || KIND_LABEL[box.kind];
+    const prodName = nearestProductName(box);
+    box.name = prodName ? `${baseName}_${rootObj.branchCount}_${prodName}` : `${baseName}_${rootObj.branchCount}`;
+    box.rootId = rootId===box.id ? null : rootId;
     box.masterId = null;
     box.isInstance = false;
     refreshTray();
@@ -2773,7 +2827,9 @@
         // reuse the box's own id for the archived entry (not a fresh uid) so
         // any instance's masterId still resolves to it after archiving
         if (box && !box.isInstance) {
-          state.archived.push({ id: box.id, kind: box.kind, name: box.name, snapshot: collectSubtreeFull(box.id) });
+          state.archived.push({ id: box.id, kind: box.kind, name: box.name,
+            rootId: box.rootId, branchCount: box.branchCount, // keep its place (and, if it's a root, its branch counter) in the Library's family tree
+            snapshot: collectSubtreeFull(box.id) });
         }
       }
       removeBoxSubtree(s.id);
