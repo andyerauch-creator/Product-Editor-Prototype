@@ -87,6 +87,7 @@
      toggle button, inline within the Boundaries group — not a dropdown. */
   #elementSubTools { display: flex; flex-direction: column; gap: 6px; padding-left: 6px; }
   #elementSubTools[hidden] { display: none; }
+  #toggleInsertBtn[hidden] { display: none; }
   #toolbar .group.disabled { opacity: .35; pointer-events: none; }
 
   .field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
@@ -261,39 +262,6 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="8" width="18" height="8" rx="1"/></svg>
           12&quot; Wall
         </div>
-        <details class="group" open>
-          <summary>Boundaries</summary>
-          <div class="tool" data-tool="unitplan" title="Unit Plan boundary (U) — goes inside an open Product">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-            Unit Plan
-          </div>
-          <div class="tool" data-tool="layout" title="Layout boundary (Y) — goes inside an open Unit Plan">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
-            Layout
-          </div>
-          <div class="tool" id="elementToggle" title="Element — place furniture/fixtures (only usable while a Layout is open)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="1.5"/><rect x="6" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/><rect x="13" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/></svg>
-            Element
-          </div>
-          <div id="elementSubTools" hidden>
-            <div class="tool" data-tool="element:toilet" title="Toilet (N) — place on an intersection/corner">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="3" width="10" height="4.5" rx="1" fill="currentColor" stroke="none"/><ellipse cx="12" cy="15" rx="7" ry="6.2"/></svg>
-              Toilet
-            </div>
-            <div class="tool" data-tool="element:table" title="Table — place on an intersection/corner">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="7" width="16" height="10" rx="1.5" fill="currentColor" stroke="none"/></svg>
-              Table
-            </div>
-            <div class="tool" data-tool="element:bed" title="Bed — place on an intersection/corner">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="1.5"/><rect x="6" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/><rect x="13" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/></svg>
-              Bed
-            </div>
-            <div class="tool" data-tool="element:car" title="Car — place on an intersection/corner">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="2" width="10" height="20" rx="4"/><path d="M7.5 8h9M7.5 16h9"/></svg>
-              Car
-            </div>
-          </div>
-        </details>
       </div>
       <div id="elementEditorToolset" hidden>
         <div class="tool" data-tool="shape:rect" title="Rounded rectangle — grey filled shape">
@@ -384,6 +352,9 @@
     insertBranchRootId: null,   // same idea, for the Insert panel's own
     insertBranchRootKind: null, // Versions tray (lists a root's insertable
                   // versions: the original plus every branch)
+    placingCustomElementId: null, // which authored Element (from the Insert
+                  // panel, in an open Layout) tool 'element:custom' is
+                  // about to drop on the next click
   };
   let nextId = 1;
   const uid = () => nextId++;
@@ -1068,8 +1039,42 @@
     bed:    { label:'Bed',    w:5,   h:6.5,  draw:drawBedSymbol },
     car:    { label:'Car',    w:6.5, h:15,   draw:drawCarSymbol },
   };
-  function elementType(el){ return ELEMENT_TYPES[el.type] || ELEMENT_TYPES.toilet; }
-  // Tool ids for element placement are "element:<type>" (e.g. "element:table").
+  // A placed element is either a built-in fixture (el.type, one of the
+  // hardcoded ELEMENT_TYPES) or a custom one authored in the Element Editor
+  // (el.customElementId, pointing at a live top-level 'element' box) — the
+  // latter's footprint is its own box extent, and its draw() replays its
+  // authored rects/lines offset from its insertion point (so it renders the
+  // same way here as it did while being drawn), using whatever fill/stroke/
+  // hover/selection colors the caller already worked out.
+  function elementType(el){
+    if (el.customElementId!=null) {
+      const box = findById(state.boxes, el.customElementId);
+      if (box) {
+        const e = boxExt(box);
+        const w = Math.abs(e.x2-e.x1)||1, h = Math.abs(e.y2-e.y1)||1;
+        const ip = box.insertionPoint || {x:(e.x1+e.x2)/2, y:(e.y1+e.y2)/2};
+        const shapes = state.elementShapes.filter(sh=>sh.elementId===box.id);
+        return { w, h, draw:(c,colors)=>{
+          for (const sh of shapes) {
+            const x1=sh.x1-ip.x, y1=sh.y1-ip.y, x2=sh.x2-ip.x, y2=sh.y2-ip.y;
+            if (sh.kind==='rect') {
+              const x=Math.min(x1,x2), y=Math.min(y1,y2), ww=Math.abs(x2-x1), hh=Math.abs(y2-y1);
+              roundRectPath(c, x, y, ww, hh, Math.min(10, Math.min(ww,hh)/4 || 0));
+              c.fillStyle=colors.fill; c.fill();
+              c.strokeStyle=colors.stroke; c.lineWidth=colors.lineWidth; c.stroke();
+            } else {
+              c.strokeStyle=colors.stroke; c.lineWidth=colors.lineWidth;
+              c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke();
+            }
+          }
+        }};
+      }
+    }
+    return ELEMENT_TYPES[el.type] || ELEMENT_TYPES.toilet;
+  }
+  // Tool ids for element placement are "element:<type>" (e.g. "element:table"),
+  // or "element:custom" while placing a specific authored Element (its id is
+  // in state.placingCustomElementId).
   function isElementTool(tool){ return tool.indexOf('element')===0; }
   function isShapeTool(tool){ return tool.indexOf('shape:')===0; }
   function currentElementType(){ return isElementTool(state.tool) ? state.tool.slice(8) : 'toilet'; }
@@ -1126,7 +1131,9 @@
         roundRectPath(ctx, x, y, w, h, Math.min(10, Math.min(w,h)/4));
         ctx.fillStyle = sel ? '#8a94a3' : '#6b7280';
         ctx.fill();
-        if (sel) { ctx.strokeStyle='#4c9aff'; ctx.lineWidth=2; ctx.stroke(); }
+        ctx.strokeStyle = sel ? '#4c9aff' : '#ffffff';
+        ctx.lineWidth = sel ? 2 : 1.2;
+        ctx.stroke();
       } else {
         ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
         ctx.strokeStyle = sel ? '#4c9aff' : '#c2c8d2';
@@ -1163,6 +1170,24 @@
     state.elements.push({ id, type, containerId: ac?ac.id:null, ref:{ x:a.x, y:a.y, xRef:a.xRef, yRef:a.yRef }, rot:0 });
     state.selection = { kind:'element', id };
     refreshTray();
+  }
+  // Same idea, but for a specific authored Element (picked from the Insert
+  // panel) instead of a hardcoded fixture type.
+  function placeCustomElement(wp, elementId) {
+    const a = anchorAt(wp, 16/ppfNow());
+    if (!a) return;
+    const id = uid();
+    const ac = activeContainer();
+    state.elements.push({ id, customElementId:elementId, containerId: ac?ac.id:null, ref:{ x:a.x, y:a.y, xRef:a.xRef, yRef:a.yRef }, rot:0 });
+    state.selection = { kind:'element', id };
+    refreshTray();
+  }
+  // Arm placement of one specific authored Element — the next canvas click
+  // (same grid/edge snapping as a built-in fixture) drops it.
+  function startPlaceElement(elementId){
+    state.placingCustomElementId = elementId;
+    setTool('element:custom');
+    buildInsertList();
   }
   // Place (or move) the one insertion point an Element (in the Element
   // Editor) has — where it anchors when the finished symbol gets placed
@@ -1513,7 +1538,8 @@
     if (state.tool === 'product' || state.tool === 'unitplan' || state.tool === 'layout') {
       drag = { kind:'box', boxKind:state.tool, x1:snapped.x, y1:snapped.y, x2:snapped.x, y2:snapped.y };
     } else if (isElementTool(state.tool)) {
-      placeElement(wp, currentElementType());
+      if (state.tool==='element:custom') placeCustomElement(wp, state.placingCustomElementId);
+      else placeElement(wp, currentElementType());
     } else if (state.tool === 'grid') {
       drag = { kind:'grid', start: snapped };
     } else if (state.tool === 'wall6' || state.tool === 'wall12') {
@@ -1731,7 +1757,9 @@
       if (isElementTool(state.tool)) {
         const a = anchorAt(mouseWRaw, 16/ppfNow());
         if (a) {
-          const {w,h} = ELEMENT_TYPES[currentElementType()] || ELEMENT_TYPES.toilet;
+          const {w,h} = state.tool==='element:custom'
+            ? elementType({customElementId: state.placingCustomElementId})
+            : (ELEMENT_TYPES[currentElementType()] || ELEMENT_TYPES.toilet);
           const cs = [[-w/2,0],[w/2,0],[w/2,h],[-w/2,h]].map(([lx,ly])=>w2s({x:a.x+lx,y:a.y+ly}));
           ctx.beginPath(); ctx.moveTo(cs[0].x,cs[0].y);
           for (let i=1;i<cs.length;i++) ctx.lineTo(cs[i].x,cs[i].y);
@@ -2058,6 +2086,7 @@
         const x=Math.min(p1x,p2x), y=Math.min(p1y,p2y), ww=Math.abs(p2x-p1x), hh=Math.abs(p2y-p1y);
         roundRectPath(c, x, y, ww, hh, Math.min(4, Math.min(ww,hh)/4));
         c.fillStyle='#6b7280'; c.fill();
+        c.strokeStyle='#ffffff'; c.lineWidth=1; c.stroke();
       } else {
         c.strokeStyle='#c2c8d2'; c.lineWidth=1; c.beginPath(); c.moveTo(p1x,p1y); c.lineTo(p2x,p2y); c.stroke();
       }
@@ -2151,6 +2180,7 @@
         const x=Math.min(p1x,p2x), y=Math.min(p1y,p2y), ww=Math.abs(p2x-p1x), hh=Math.abs(p2y-p1y);
         roundRectPath(c, x, y, ww, hh, Math.min(4, Math.min(ww,hh)/4));
         c.fillStyle='#6b7280'; c.fill();
+        c.strokeStyle='#ffffff'; c.lineWidth=1; c.stroke();
       } else {
         c.strokeStyle='#c2c8d2'; c.lineWidth=1; c.beginPath(); c.moveTo(p1x,p1y); c.lineTo(p2x,p2y); c.stroke();
       }
@@ -2256,7 +2286,6 @@
     inp.addEventListener('click', e=>e.stopPropagation());
     inp.addEventListener('input', ()=>{ obj.name=inp.value; });
     nm.appendChild(inp);
-    if (!live) { const tag=document.createElement('span'); tag.className='suffix'; tag.textContent='not on canvas'; nm.appendChild(tag); }
     item.appendChild(nm);
     item.appendChild(makeActionsRow(()=> live ? deleteBoundary(obj.id) : deleteArchivedMaster(obj.id)));
     item.addEventListener('click', e=>{
@@ -2889,10 +2918,16 @@
     // flow) stays unscoped, exactly as it's always behaved.
     const insertParentId = activeContainer().parentId==null ? null : undefined;
     for (const g of buildLibraryGroups(kind, insertParentId)) {
-      const hasBranches = g.branches.length>0;
-      const onClick = hasBranches ? ()=>selectInsertBranchRoot(kind, g.root.obj.id) : ()=>startInsert(g.root.obj.id);
+      // Elements don't branch, and aren't placed through the 4-corner
+      // insert flow — clicking one arms it, then the next canvas click
+      // drops it (same grid/edge snapping a built-in fixture uses).
+      const hasBranches = kind!=='element' && g.branches.length>0;
+      const onClick = kind==='element'
+        ? ()=>startPlaceElement(g.root.obj.id)
+        : (hasBranches ? ()=>selectInsertBranchRoot(kind, g.root.obj.id) : ()=>startInsert(g.root.obj.id));
       const card = buildInsertCard(kind, g.root, onClick, hasBranches);
       if (hasBranches && state.insertBranchRootId===g.root.obj.id) card.classList.add('lib-selected');
+      if (kind==='element' && state.tool==='element:custom' && state.placingCustomElementId===g.root.obj.id) card.classList.add('placing');
       insertListEl.appendChild(card);
     }
     refreshInsertBranchesTray();
@@ -3022,7 +3057,9 @@
   function insertableBoundaryKind(){
     const active = activeContainer();
     if (!active) return null;
-    const child = { product:'unitplan', unitplan:'layout', layout:null, element:null };
+    // A Layout offers Elements to insert — every authored Element made in
+    // the Element Editor, ready to drop in as furniture/fixtures.
+    const child = { product:'unitplan', unitplan:'layout', layout:'element', element:null };
     return child[active.kind] ?? null;
   }
   // A Layout living inside a STANDALONE Unit Plan (i.e. placed there while
@@ -3179,36 +3216,21 @@
     refreshTray();
     saveStateToStorage();
   }
-  // Enable only the drawable boundary tool; grey out the others.
-  // "Element" isn't a draw tool itself — it's a toggle that reveals the
-  // Toilet/Table/Bed/Car buttons inline underneath it, grouped right in
-  // with the other boundary buttons rather than as a separate dropdown.
-  const elementToggleEl = document.getElementById('elementToggle');
-  const elementSubToolsEl = document.getElementById('elementSubTools');
-  elementToggleEl.addEventListener('click', ()=>{
-    if (elementToggleEl.classList.contains('disabled')) return;
-    elementSubToolsEl.hidden = !elementSubToolsEl.hidden;
-    elementToggleEl.classList.toggle('active', !elementSubToolsEl.hidden);
-  });
+  // Boundary drawing (Unit Plan/Layout) and element placement no longer
+  // have their own toolbar buttons — everything nested gets PLACED via the
+  // Insert panel instead (an existing Unit Plan/Layout/Element, made in its
+  // own dedicated Editor). This just keeps the remaining tools (grids,
+  // dims, walls, Element Editor's shapes) in sync with what's open.
   function updateToolAvailability(){
-    const drawable = drawableBoundaryKind();
-    for (const kind of ['product','unitplan','layout']) {
-      const btn = toolbar.querySelector(`.tool[data-tool="${kind}"]`);
-      if (btn) btn.classList.toggle('disabled', kind!==drawable);
-    }
     // Elements are furniture/fixtures for a Layout's interior — only usable
     // while a Layout is the open (deepest) container.
     const layoutOpen = (activeContainer()||{}).kind === 'layout';
-    elementToggleEl.classList.toggle('disabled', !layoutOpen);
-    if (!layoutOpen) { elementSubToolsEl.hidden = true; elementToggleEl.classList.remove('active'); }
-    else if (isElementTool(state.tool)) { elementSubToolsEl.hidden = false; elementToggleEl.classList.add('active'); }
     // Element Editor's own rect/line/insertion-point tools — usable only
     // while an Element is the open (deepest) container.
     const elementOpen = (activeContainer()||{}).kind === 'element';
     toolbar.querySelectorAll('#elementEditorToolset .tool[data-tool]').forEach(c=>c.classList.toggle('disabled', !elementOpen));
     // if the active tool just became unavailable, fall back to select
-    const toolNowInvalid = (['product','unitplan','layout'].includes(state.tool) && state.tool!==drawable)
-      || (isElementTool(state.tool) && !layoutOpen)
+    const toolNowInvalid = (isElementTool(state.tool) && !layoutOpen)
       || (isShapeTool(state.tool) && !elementOpen);
     if (toolNowInvalid) {
       state.tool='select';
@@ -3236,6 +3258,9 @@
     const isElementMode = state.editorMode==='element';
     boundaryToolsetEl.hidden = isElementMode;
     elementEditorToolsetEl.hidden = !isElementMode;
+    // Elements aren't placed into anything (yet) — there's nothing to
+    // Insert while authoring one, so the button's just hidden in this mode.
+    toggleInsertBtn.hidden = isElementMode;
   }
   editorModeSelectEl.addEventListener('change', e=>{
     state.editorMode = e.target.value;
