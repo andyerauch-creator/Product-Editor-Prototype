@@ -2622,7 +2622,6 @@
     const nm=document.createElement('div'); nm.className='nm';
     const label=document.createElement('div'); label.className='label'; label.textContent=obj.name || KIND_LABEL[kind];
     nm.appendChild(label);
-    if (!live) { const tag=document.createElement('span'); tag.className='suffix'; tag.textContent='not on canvas'; nm.appendChild(tag); }
     item.appendChild(nm);
     item.addEventListener('click', onCardClick);
     if (live) drawLiveThumb(cv2, obj); else drawSnapshotThumb(cv2, obj.snapshot);
