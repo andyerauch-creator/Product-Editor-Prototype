@@ -151,13 +151,16 @@
     width: 100%; background: var(--bg); border: 1px solid var(--border);
     color: var(--ink); border-radius: 6px; padding: 6px 7px; font-size: 12px;
   }
-  #tray .item .del {
-    position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; border-radius: 4px;
-    background: rgba(20,23,28,.7); color: #ff8a8a; font-size: 13px; line-height: 18px;
-    text-align: center; opacity: 0; transition: .1s;
+  #tray .item .actions { display: flex; gap: 6px; padding: 0 8px 8px; border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
+  #tray .item .actions button {
+    flex: 1; background: var(--panel); border: 1px solid var(--border); color: var(--ink);
+    border-radius: 6px; padding: 5px 0; font-size: 10.5px; cursor: pointer;
   }
-  #tray .item:hover .del { opacity: 1; }
-  #tray .item .del:hover { background: #c0392b; color: #fff; }
+  #tray .item .actions button:hover { background: #383e4a; }
+  #tray .item .actions button.save { border-color: var(--accent); color: #9ec5ff; }
+  #tray .item .actions button.danger { color: #ff8a8a; }
+  #tray .item .actions button.danger:hover { background: #c0392b; color: #fff; }
+  #tray .item .actions button:disabled { opacity: .6; cursor: default; }
 </style>
 </head>
 <body>
@@ -1715,6 +1718,51 @@
       c.restore();
     }
   }
+  // ---- Local persistence -----------------------------------------------------
+  // Everything lives in one browser-local save file (grids/walls/dims all
+  // reference each other across boxes, so there's no meaningful way to save
+  // "just this product" — Save always commits the whole current drawing).
+  // Deletes persist immediately so a removed item can't come back on reload.
+  const STORAGE_KEY = 'draftingSpaceGridsWalls.v1';
+  function saveStateToStorage(){
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        nextId, boxes: state.boxes, gridlines: state.gridlines, walls: state.walls,
+        elements: state.elements, dims: state.dims, savedLayouts: state.savedLayouts,
+      }));
+      return true;
+    } catch(e) { return false; } // storage unavailable (private mode, disabled, quota) — no-op
+  }
+  function loadStateFromStorage(){
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (data.boxes) state.boxes = data.boxes;
+      if (data.gridlines) state.gridlines = data.gridlines;
+      if (data.walls) state.walls = data.walls;
+      if (data.elements) state.elements = data.elements;
+      if (data.dims) state.dims = data.dims;
+      if (data.savedLayouts) state.savedLayouts = data.savedLayouts;
+      if (typeof data.nextId === 'number') nextId = data.nextId;
+    } catch(e) { /* corrupt or unavailable — start blank */ }
+  }
+  // Brief "Saved" confirmation on a button after a successful/failed save.
+  function flashSaveResult(btn, ok){
+    const original = btn.textContent;
+    btn.textContent = ok ? 'Saved' : 'Save failed';
+    btn.disabled = true;
+    setTimeout(()=>{ btn.textContent = original; btn.disabled = false; }, 1000);
+  }
+  function makeActionsRow(onDelete){
+    const actions=document.createElement('div'); actions.className='actions';
+    const saveBtn=document.createElement('button'); saveBtn.type='button'; saveBtn.className='save'; saveBtn.textContent='Save';
+    saveBtn.addEventListener('click', e=>{ e.stopPropagation(); flashSaveResult(saveBtn, saveStateToStorage()); });
+    const delBtn=document.createElement('button'); delBtn.type='button'; delBtn.className='danger'; delBtn.textContent='Delete';
+    delBtn.addEventListener('click', e=>{ e.stopPropagation(); onDelete(); });
+    actions.appendChild(saveBtn); actions.appendChild(delBtn);
+    return actions;
+  }
   const trayList=document.getElementById('trayList');
   function buildSavedLayoutsList(){
     if(!state.savedLayouts.length){ trayList.innerHTML=''; return; }
@@ -1724,9 +1772,12 @@
       item.className='item'+(state.placing&&state.placing.templateId===tpl.id?' placing':'');
       const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
       const nm=document.createElement('div'); nm.className='nm'; nm.textContent=tpl.name; item.appendChild(nm);
-      const del=document.createElement('div'); del.className='del'; del.textContent='×'; del.title='Delete'; item.appendChild(del);
-      item.addEventListener('click', e=>{ if(e.target===del)return; startPlacing(tpl.id); });
-      del.addEventListener('click', e=>{ e.stopPropagation(); state.savedLayouts=state.savedLayouts.filter(t=>t.id!==tpl.id); if(state.placing&&state.placing.templateId===tpl.id)state.placing=null; buildSavedLayoutsList(); draw(); });
+      item.appendChild(makeActionsRow(()=>{
+        state.savedLayouts=state.savedLayouts.filter(t=>t.id!==tpl.id);
+        if(state.placing&&state.placing.templateId===tpl.id)state.placing=null;
+        saveStateToStorage(); buildSavedLayoutsList(); draw();
+      }));
+      item.addEventListener('click', e=>{ if(e.target.closest('.actions'))return; startPlacing(tpl.id); });
       trayList.appendChild(item);
       drawTemplateThumb(cv2, tpl);
     }
@@ -1745,6 +1796,12 @@
     const productName = (parent && parent.kind==='product') ? productDisplayName(parent) : 'Product';
     return { prefix: bx.name, suffix: '_'+productName };
   }
+  // Delete a Product/Unit Plan boundary (and its nested contents) via the
+  // shared deleteSelection() path, same as the canvas right-click menu uses.
+  function deleteBoundary(id){
+    state.selection = { kind:'box', id };
+    deleteSelection();
+  }
   const productsListEl=document.getElementById('productsList');
   function buildProductsList(){
     const products = state.boxes.filter(b=>b.kind==='product');
@@ -1759,7 +1816,8 @@
       inp.addEventListener('input', ()=>{ bx.name=inp.value; buildUnitplansList(); });
       nm.appendChild(inp);
       item.appendChild(nm);
-      item.addEventListener('click', e=>{ if(e.target===inp)return; state.selection={kind:'box',id:bx.id}; draw(); });
+      item.appendChild(makeActionsRow(()=>deleteBoundary(bx.id)));
+      item.addEventListener('click', e=>{ if(e.target===inp||e.target.closest('.actions'))return; state.selection={kind:'box',id:bx.id}; draw(); });
       productsListEl.appendChild(item);
       drawLiveThumb(cv2, bx);
     }
@@ -1776,7 +1834,8 @@
       const nm=document.createElement('div'); nm.className='nm';
       nm.textContent=prefix; const sp=document.createElement('span'); sp.className='suffix'; sp.textContent=suffix; nm.appendChild(sp);
       item.appendChild(nm);
-      item.addEventListener('click', ()=>{ state.selection={kind:'box',id:bx.id}; draw(); });
+      item.appendChild(makeActionsRow(()=>deleteBoundary(bx.id)));
+      item.addEventListener('click', e=>{ if(e.target.closest('.actions'))return; state.selection={kind:'box',id:bx.id}; draw(); });
       unitplansListEl.appendChild(item);
       drawLiveThumb(cv2, bx);
     }
@@ -2096,6 +2155,7 @@
       relabelGrid();
     }
     refreshTray(); // wall/element/grid/box removal can all change a preview's contents
+    saveStateToStorage(); // deletes always persist immediately, so they can't come back on reload
     state.selection=null; draw();
   }
 
@@ -2168,8 +2228,8 @@
 
   // ---- Boot -----------------------------------------------------------------
   function seed(){
-    // a little starter content so the space isn't blank
     state.view={x:80,y:70,scale:1};
+    loadStateFromStorage(); // restore whatever was last explicitly saved, if anything
   }
   seed();
   refreshTray();
