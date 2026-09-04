@@ -3150,7 +3150,6 @@
     insertBranchesTrayEl.hidden=false;
     insertBranchesTitleTextEl.textContent = 'Versions: ' + (g.root.obj.name || KIND_LABEL[state.insertBranchRootKind]);
     insertBranchesListEl.innerHTML='';
-    insertBranchesListEl.appendChild(buildInsertCard(state.insertBranchRootKind, g.root, ()=>startInsert(g.root.obj.id)));
     for (const br of g.branches) insertBranchesListEl.appendChild(buildInsertCard(state.insertBranchRootKind, br, ()=>startInsert(br.obj.id)));
   }
   document.getElementById('closeInsertBranchesBtn').addEventListener('click', e=>{
