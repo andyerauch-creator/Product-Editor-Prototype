@@ -975,9 +975,11 @@
     drawDims();
     drawElements();       // elements (dimmed if outside the focus)
     drawElementShapes();  // an open Element's own rects/lines/insertion point
-    drawDimming();        // dim content outside open boundaries
-    drawBoxes();          // boundary frames crisp on top of the dimming; selected/hover frontmost
-    drawHoverHighlight(); // hovered/Tab-cycled container on the very top
+    drawBoxes();          // boundary frames — selected/hover frontmost
+    drawDimming();        // fade everything outside the open focus to white,
+                  // frames included, so a sibling boundary's colored outline
+                  // doesn't sit there un-faded while its walls/dims do
+    drawHoverHighlight(); // hovered/Tab-cycled container, un-faded, on top
     drawInserting();      // edge picks while inserting a copy from the Insert panel
     drawPreview();
     updateHud();
@@ -1067,7 +1069,7 @@
       const e=boxExt(b), p1=w2s({x:e.x1,y:e.y1}), p2=w2s({x:e.x2,y:e.y2});
       const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y), ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
       ctx.beginPath(); ctx.rect(0,0,W,H); ctx.rect(x,y,ww,hh);
-      ctx.fillStyle='rgba(255,255,255,.6)'; ctx.fill('evenodd');
+      ctx.fillStyle='rgba(255,255,255,.75)'; ctx.fill('evenodd');
     }
   }
 
