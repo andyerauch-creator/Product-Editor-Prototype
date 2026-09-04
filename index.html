@@ -143,12 +143,12 @@
     background: var(--panel-2); cursor: pointer; overflow: hidden; position: relative;
   }
   #tray .item:hover { border-color: var(--accent); }
-  #tray .item.placing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  #tray .item.open { border-color: #ff5c5c; }
   #tray .item canvas { display: block; width: 100%; aspect-ratio: 1 / 1; background: var(--bg); border-bottom: 1px solid var(--border); }
-  #tray .item .nm { font-size: 11px; padding: 6px 8px; color: var(--ink); }
-  #tray .item .nm .suffix { color: var(--muted); }
+  #tray .item .nm { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 6px 8px; color: var(--ink); }
+  #tray .item .nm .suffix { color: var(--muted); flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #tray .item .nm input[type=text] {
-    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border);
     color: var(--ink); border-radius: 6px; padding: 6px 7px; font-size: 12px;
   }
   #tray .item .actions { display: flex; gap: 6px; padding: 0 8px 8px; border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
@@ -232,7 +232,7 @@
       <h3 id="libraryTitle">Library</h3>
       <div class="list" id="productsList"></div>
       <div class="list" id="unitplansList"></div>
-      <div class="list" id="trayList"></div>
+      <div class="list" id="layoutsList"></div>
     </div>
     <div id="stage">
       <canvas id="cv"></canvas>
@@ -269,8 +269,6 @@
     dims: [],        // {id, a:{x,y}, b:{x,y}, off}  feet, off=offset feet
     elements: [],    // {id, ref:{x,y,xRef,yRef}, rot}  1×1 ft square, ref = insertion point
     showDims: { product:true, unitplan:true, layout:true }, // dim visibility per container kind
-    savedLayouts: [],// {id, name, w0, h0, thumb, grids, walls, elements} — normalized templates
-    placing: null,   // {templateId, picks:[{axis,ref,coord}]} while placing a saved layout
     selection: null, // {kind, id}
   };
   let nextId = 1;
@@ -693,15 +691,13 @@
     const w = cv.clientWidth, h = cv.clientHeight;
     ctx.clearRect(0, 0, w, h);
     drawBackgroundGrid(w, h);
-    drawWalls();          // walls render first, beneath everything (incl. template walls)
+    drawWalls();
     drawGridlines(w, h);
-    drawPlacedTemplates();// placed-layout grids & elements
     drawDims();
     drawElements();       // elements (dimmed if outside the focus)
     drawDimming();        // dim content outside open boundaries
     drawBoxes();          // boundary frames crisp on top of the dimming; selected/hover frontmost
     drawHoverHighlight(); // hovered/Tab-cycled container on the very top
-    drawPlacing();        // edge picks while placing a saved layout
     drawPreview();
     updateHud();
     updateFlexPanel();
@@ -956,14 +952,6 @@
       const Hpx=Math.max(1.4, (wl.thickness||0.5)*ppfNow()/2);
       return { A, B, H:Hpx };
     });
-    // walls from placed layout templates (mapped through each box's extent)
-    for (const box of state.boxes) { if(!box.template)continue;
-      const e=boxExt(box), W=e.x2-e.x1, H=e.y2-e.y1;
-      for (const w of box.template.walls) {
-        const A=w2s({x:e.x1+w.ax*W, y:e.y1+w.ay*H}), B=w2s({x:e.x1+w.bx*W, y:e.y1+w.by*H});
-        rects.push({ A, B, H:Math.max(1.4,(w.thk||0.5)*ppfNow()/2) });
-      }
-    }
     if (!rects.length) return;
     offCtx.setTransform(dpr,0,0,dpr,0,0);
     offCtx.clearRect(0,0,cv.clientWidth,cv.clientHeight);
@@ -1138,7 +1126,7 @@
   }
   const hoverKey = list => list.map(c=>c.kind+c.id).join(',');
   function refreshHover(sp) {
-    const cands = (state.tool==='select' && !drag && !state.placing) ? hoverCandidatesAt(sp) : [];
+    const cands = (state.tool==='select' && !drag) ? hoverCandidatesAt(sp) : [];
     if (hoverKey(cands) !== hoverKey(hoverList)) { hoverList = cands; hoverIdx = 0; }
   }
 
@@ -1163,14 +1151,6 @@
     const wp = s2w(sp);
     const snapped = snapWorld(wp);
 
-    // placing a saved layout: each click picks a reference edge
-    if (state.placing) {
-      const pk = pickReference(wp, null);
-      if (pk && !state.placing.picks.some(p=>sameRef(p.ref,pk.ref)))
-        state.placing.picks.push({ axis:pk.axis, ref:pk.ref, coord:pk.coord });
-      if (pk) tryFinalizePlacement();
-      draw(); return;
-    }
 
     if (state.tool === 'select') {
       let hit = activeHover();   // the highlighted (hovered / Tab-cycled) target
@@ -1627,48 +1607,9 @@
       });
     });
   }
-  // ---- Saved layouts (templates) + placement -------------------------------
-  // Capture a layout's contents normalized to its rectangle (0..1).
-  function captureTemplate(box){
-    const e=boxExt(box), W=e.x2-e.x1||1, H=e.y2-e.y1||1;
-    const nx=x=>(x-e.x1)/W, ny=y=>(y-e.y1)/H;
-    const inRect=p=>p.x>=e.x1-0.05&&p.x<=e.x2+0.05&&p.y>=e.y1-0.05&&p.y<=e.y2+0.05;
-    const grids=state.gridlines.filter(g=>g.boxId===box.id).map(g=>({type:g.type, t:g.t}));
-    const walls=state.walls.filter(wl=>{const a=endPos(wl.a),b=endPos(wl.b);return inRect({x:(a.x+b.x)/2,y:(a.y+b.y)/2});})
-      .map(wl=>{const a=endPos(wl.a),b=endPos(wl.b);return{ax:nx(a.x),ay:ny(a.y),bx:nx(b.x),by:ny(b.y),thk:wl.thickness||0.5};});
-    const elements=state.elements.filter(el=>inRect(endPos(el.ref))).map(el=>{const p=endPos(el.ref);return{x:nx(p.x),y:ny(p.y),rot:el.rot||0};});
-    return {w0:W, h0:H, grids, walls, elements};
-  }
-  // Render a template into a small preview canvas.
-  function drawTemplateThumb(canvas, tpl){
-    const c=canvas.getContext('2d'), cw=canvas.width, ch=canvas.height, pad=8;
-    c.clearRect(0,0,cw,ch);
-    const sc=Math.min((cw-2*pad)/(tpl.w0||1),(ch-2*pad)/(tpl.h0||1));
-    const ox=(cw-tpl.w0*sc)/2, oy=(ch-tpl.h0*sc)/2;
-    const SX=fx=>ox+fx*sc, SY=fy=>oy+fy*sc; // fx,fy in feet
-    c.strokeStyle='#7e879a'; c.lineWidth=1; c.strokeRect(ox,oy,tpl.w0*sc,tpl.h0*sc);
-    c.strokeStyle='#7da0d0'; c.setLineDash([3,2]);
-    for(const g of tpl.grids){ c.beginPath();
-      if(g.type==='v'){c.moveTo(SX(g.t*tpl.w0),SY(0));c.lineTo(SX(g.t*tpl.w0),SY(tpl.h0));}
-      else{c.moveTo(SX(0),SY(g.t*tpl.h0));c.lineTo(SX(tpl.w0),SY(g.t*tpl.h0));} c.stroke(); }
-    c.setLineDash([]);
-    for(const w of tpl.walls){ const ax=SX(w.ax*tpl.w0),ay=SY(w.ay*tpl.h0),bx=SX(w.bx*tpl.w0),by=SY(w.by*tpl.h0);
-      const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1, hpx=Math.max(1.4,w.thk*sc/2), nx=-dy/len*hpx, ny=dx/len*hpx;
-      c.fillStyle='#e6e9ef'; c.beginPath(); c.moveTo(ax+nx,ay+ny);c.lineTo(bx+nx,by+ny);c.lineTo(bx-nx,by-ny);c.lineTo(ax-nx,ay-ny);c.closePath();c.fill();
-      c.strokeStyle='#5b6472';c.lineWidth=0.6;c.stroke(); }
-    for(const el of tpl.elements){
-      c.save();
-      c.translate(SX(el.x*tpl.w0), SY(el.y*tpl.h0));
-      c.rotate((el.rot||0)*Math.PI/180);
-      c.scale(sc, sc);
-      drawToiletSymbol(c, { fill:'#c2c8d2', stroke:'#6b7280', lineWidth: 1/sc });
-      c.restore();
-    }
-  }
-  // Render a live preview of a Product/Unit Plan boundary's actual current
-  // contents (nested boundaries, grids, walls, elements) into a small canvas —
-  // unlike drawTemplateThumb this reads straight from live state, not a
-  // captured/normalized template.
+  // Render a live preview of a Product/Unit Plan/Layout boundary's actual current
+  // contents (nested boundaries, grids, walls, elements) into a small canvas,
+  // read straight from live state.
   function drawLiveThumb(canvas, box){
     const c=canvas.getContext('2d'), cw=canvas.width, ch=canvas.height, pad=8;
     c.clearRect(0,0,cw,ch);
@@ -1728,7 +1669,7 @@
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         nextId, boxes: state.boxes, gridlines: state.gridlines, walls: state.walls,
-        elements: state.elements, dims: state.dims, savedLayouts: state.savedLayouts,
+        elements: state.elements, dims: state.dims,
       }));
       return true;
     } catch(e) { return false; } // storage unavailable (private mode, disabled, quota) — no-op
@@ -1743,7 +1684,6 @@
       if (data.walls) state.walls = data.walls;
       if (data.elements) state.elements = data.elements;
       if (data.dims) state.dims = data.dims;
-      if (data.savedLayouts) state.savedLayouts = data.savedLayouts;
       if (typeof data.nextId === 'number') nextId = data.nextId;
     } catch(e) { /* corrupt or unavailable — start blank */ }
   }
@@ -1763,30 +1703,16 @@
     actions.appendChild(saveBtn); actions.appendChild(delBtn);
     return actions;
   }
-  const trayList=document.getElementById('trayList');
-  function buildSavedLayoutsList(){
-    if(!state.savedLayouts.length){ trayList.innerHTML=''; return; }
-    trayList.innerHTML='';
-    for(const tpl of state.savedLayouts){
-      const item=document.createElement('div');
-      item.className='item'+(state.placing&&state.placing.templateId===tpl.id?' placing':'');
-      const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
-      const nm=document.createElement('div'); nm.className='nm'; nm.textContent=tpl.name; item.appendChild(nm);
-      item.appendChild(makeActionsRow(()=>{
-        state.savedLayouts=state.savedLayouts.filter(t=>t.id!==tpl.id);
-        if(state.placing&&state.placing.templateId===tpl.id)state.placing=null;
-        saveStateToStorage(); buildSavedLayoutsList(); draw();
-      }));
-      item.addEventListener('click', e=>{ if(e.target.closest('.actions'))return; startPlacing(tpl.id); });
-      trayList.appendChild(item);
-      drawTemplateThumb(cv2, tpl);
+  // Products/Unit Plans/Layouts always show, named inline in the tray. New
+  // ones get a numbered default (per kind, via KIND_LABEL below) so the
+  // field is never blank.
+  function ensureBoxNames(){
+    const n = { product:0, unitplan:0, layout:0 };
+    for (const b of state.boxes) {
+      if (!(b.kind in n)) continue;
+      n[b.kind]++;
+      if (!b.name) b.name = KIND_LABEL[b.kind]+' '+n[b.kind];
     }
-  }
-  // Products always show, named inline in the tray (no default UI to name them
-  // elsewhere). New products get a numbered default so the field is never blank.
-  function ensureProductNames(){
-    let n=0;
-    for(const b of state.boxes) if(b.kind==='product'){ n++; if(!b.name) b.name='Product '+n; }
   }
   function productDisplayName(bx){ return bx.name || 'Product'; }
   // A unit plan's name is "<user chosen name>_<name of the product it's in>" —
@@ -1796,19 +1722,21 @@
     const productName = (parent && parent.kind==='product') ? productDisplayName(parent) : 'Product';
     return { prefix: bx.name, suffix: '_'+productName };
   }
-  // Delete a Product/Unit Plan boundary (and its nested contents) via the
-  // shared deleteSelection() path, same as the canvas right-click menu uses.
+  // Delete a Product/Unit Plan/Layout boundary (and its nested contents) via
+  // the shared deleteSelection() path, same as the canvas right-click menu uses.
   function deleteBoundary(id){
     state.selection = { kind:'box', id };
     deleteSelection();
   }
+  // Currently-open boundaries sort to the top of their list.
+  const openFirst = (a,b) => (b.open?1:0) - (a.open?1:0);
   const productsListEl=document.getElementById('productsList');
   function buildProductsList(){
-    const products = state.boxes.filter(b=>b.kind==='product');
+    const products = state.boxes.filter(b=>b.kind==='product').sort(openFirst);
     if(!products.length){ productsListEl.innerHTML=''; return; }
     productsListEl.innerHTML='';
     for(const bx of products){
-      const item=document.createElement('div'); item.className='item';
+      const item=document.createElement('div'); item.className='item'+(bx.open?' open':'');
       const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
       const nm=document.createElement('div'); nm.className='nm';
       const inp=document.createElement('input'); inp.type='text'; inp.value=bx.name||''; inp.placeholder='Name this product';
@@ -1824,76 +1752,58 @@
   }
   const unitplansListEl=document.getElementById('unitplansList');
   function buildUnitplansList(){
-    const plans = state.boxes.filter(b=>b.kind==='unitplan' && b.name);
+    const plans = state.boxes.filter(b=>b.kind==='unitplan').sort(openFirst);
     if(!plans.length){ unitplansListEl.innerHTML=''; return; }
     unitplansListEl.innerHTML='';
     for(const bx of plans){
       const {prefix,suffix} = unitplanDisplayName(bx);
-      const item=document.createElement('div'); item.className='item';
+      const item=document.createElement('div'); item.className='item'+(bx.open?' open':'');
       const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
       const nm=document.createElement('div'); nm.className='nm';
-      nm.textContent=prefix; const sp=document.createElement('span'); sp.className='suffix'; sp.textContent=suffix; nm.appendChild(sp);
+      const inp=document.createElement('input'); inp.type='text'; inp.value=prefix; inp.placeholder='Name this unit plan';
+      inp.addEventListener('click', e=>e.stopPropagation());
+      inp.addEventListener('input', ()=>{ bx.name=inp.value; });
+      const sp=document.createElement('span'); sp.className='suffix'; sp.textContent=suffix;
+      nm.appendChild(inp); nm.appendChild(sp);
       item.appendChild(nm);
       item.appendChild(makeActionsRow(()=>deleteBoundary(bx.id)));
-      item.addEventListener('click', e=>{ if(e.target.closest('.actions'))return; state.selection={kind:'box',id:bx.id}; draw(); });
+      item.addEventListener('click', e=>{ if(e.target===inp||e.target.closest('.actions'))return; state.selection={kind:'box',id:bx.id}; draw(); });
       unitplansListEl.appendChild(item);
       drawLiveThumb(cv2, bx);
     }
   }
-  function refreshTray(){ ensureProductNames(); buildProductsList(); buildUnitplansList(); buildSavedLayoutsList(); }
-  function startPlacing(id){ state.placing={templateId:id, picks:[]}; setTool('select'); buildSavedLayoutsList(); draw(); }
-  function tryFinalizePlacement(){
-    const vert=state.placing.picks.filter(p=>p.axis==='h'); // vertical edges → x
-    const horz=state.placing.picks.filter(p=>p.axis==='v'); // horizontal edges → y
-    if(vert.length>=2 && horz.length>=2){
-      const vs=[...vert].sort((a,b)=>a.coord-b.coord), hs=[...horz].sort((a,b)=>a.coord-b.coord);
-      createPlacedLayout(findById(state.savedLayouts,state.placing.templateId),
-        { x1:vs[0].ref, x2:vs[vs.length-1].ref, y1:hs[0].ref, y2:hs[hs.length-1].ref });
-      state.placing=null; buildSavedLayoutsList();
+  const layoutsListEl=document.getElementById('layoutsList');
+  function buildLayoutsList(){
+    const layouts = state.boxes.filter(b=>b.kind==='layout').sort(openFirst);
+    if(!layouts.length){ layoutsListEl.innerHTML=''; return; }
+    layoutsListEl.innerHTML='';
+    for(const bx of layouts){
+      const item=document.createElement('div'); item.className='item'+(bx.open?' open':'');
+      const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
+      const nm=document.createElement('div'); nm.className='nm';
+      const inp=document.createElement('input'); inp.type='text'; inp.value=bx.name||''; inp.placeholder='Name this layout';
+      inp.addEventListener('click', e=>e.stopPropagation());
+      inp.addEventListener('input', ()=>{ bx.name=inp.value; });
+      nm.appendChild(inp);
+      item.appendChild(nm);
+      item.appendChild(makeActionsRow(()=>deleteBoundary(bx.id)));
+      item.addEventListener('click', e=>{ if(e.target===inp||e.target.closest('.actions'))return; state.selection={kind:'box',id:bx.id}; draw(); });
+      layoutsListEl.appendChild(item);
+      drawLiveThumb(cv2, bx);
     }
   }
-  function createPlacedLayout(tpl, refs){
-    if(!tpl) return;
-    const x1=resolveRef(refs.x1), x2=resolveRef(refs.x2), y1=resolveRef(refs.y1), y2=resolveRef(refs.y2);
-    if(x1==null||x2==null||y1==null||y2==null)return;
-    const id=uid();
-    state.boxes.push({ id, kind:'layout',
-      x1:Math.min(x1,x2), y1:Math.min(y1,y2), x2:Math.max(x1,x2), y2:Math.max(y1,y2),
-      parentId:null, open:false,
-      bind:{ x1:refs.x1, y1:refs.y1, x2:refs.x2, y2:refs.y2 },
-      template:{ w0:tpl.w0, h0:tpl.h0, grids:tpl.grids.slice(), walls:tpl.walls.map(w=>({...w})), elements:tpl.elements.map(e=>({...e})) } });
-    state.selection={kind:'box',id};
+  // Only the section matching what you currently have open is shown — the
+  // rest hide, so the Library always tracks the level you're working at.
+  function updateTrayVisibility(){
+    const kind = (activeContainer()||{}).kind || 'product';
+    productsListEl.hidden = kind!=='product';
+    unitplansListEl.hidden = kind!=='unitplan';
+    layoutsListEl.hidden = kind!=='layout';
   }
-  // Render placed templates' grids & elements (walls go through drawWalls so they merge).
-  function drawPlacedTemplates(){
-    for(const box of state.boxes){ if(!box.template)continue;
-      const e=boxExt(box), W=e.x2-e.x1, H=e.y2-e.y1, col=boundaryColor(box);
-      ctx.setLineDash([7,5]); ctx.strokeStyle=col; ctx.lineWidth=1.3;
-      for(const g of box.template.grids){ ctx.beginPath();
-        if(g.type==='v'){const a=w2s({x:e.x1+g.t*W,y:e.y1}),b=w2s({x:e.x1+g.t*W,y:e.y2});ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);}
-        else{const a=w2s({x:e.x1,y:e.y1+g.t*H}),b=w2s({x:e.x2,y:e.y1+g.t*H});ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);} ctx.stroke(); }
-      ctx.setLineDash([]);
-      for(const el of box.template.elements){
-        const P = w2s({x:e.x1+el.x*W, y:e.y1+el.y*H});
-        const scale = ppfNow();
-        ctx.save();
-        ctx.translate(P.x, P.y);
-        ctx.rotate((el.rot||0)*Math.PI/180);
-        ctx.scale(scale, scale);
-        drawToiletSymbol(ctx, { fill:'#c2c8d2', stroke:'#6b7280', lineWidth: 1/scale });
-        ctx.restore();
-      }
-    }
-  }
-  // Highlight picked/candidate edges while placing a saved layout.
-  function drawPlacing(){
-    if(!state.placing)return;
-    const drawRef=(ref,strong)=>{ const v=resolveRef(ref); if(v==null)return; const isV=ref.type==='grid'?(findById(state.gridlines,ref.id)||{}).type==='v':(ref.edge==='x1'||ref.edge==='x2');
-      ctx.strokeStyle=strong?'#4cd2ff':'rgba(76,210,255,.6)'; ctx.lineWidth=strong?2.5:1.6; ctx.setLineDash([6,4]); ctx.beginPath();
-      if(isV){const x=w2s({x:v,y:0}).x;ctx.moveTo(x,0);ctx.lineTo(x,cv.clientHeight);}else{const y=w2s({x:0,y:v}).y;ctx.moveTo(0,y);ctx.lineTo(cv.clientWidth,y);}
-      ctx.stroke(); ctx.setLineDash([]); };
-    for(const p of state.placing.picks) drawRef(p.ref,true);
-    const pk=pickReference(mouseWRaw,null); if(pk && !state.placing.picks.some(p=>sameRef(p.ref,pk.ref))) drawRef(pk.ref,false);
+  function refreshTray(){
+    ensureBoxNames();
+    buildProductsList(); buildUnitplansList(); buildLayoutsList();
+    updateTrayVisibility();
   }
 
   function hideBoxMenu(){ menuEl.style.display='none'; }
@@ -2071,24 +1981,17 @@
   }
   // Open a boundary and all its ancestors, so the full nesting chain is active
   // (you then close them from the inside out).
+  // Opening/closing a boundary changes which Library section is visible and
+  // which item sorts to the top, so both refresh the tray.
   function openWithAncestors(bx){
     bx.open = true;
     let p = bx.parentId;
     while (p != null) { const pb = findById(state.boxes, p); if (!pb) break; pb.open = true; p = pb.parentId; }
+    refreshTray();
   }
-  // Closing a Layout offers to save it to the tray as a reusable template;
-  // closing a Unit Plan offers to name it so it's tracked in the tray. Leaving
-  // the prompt blank (or cancelling) just closes the boundary, nothing more.
   function closeBoundary(bx){
     bx.open = false;
-    if (bx.kind === 'layout') {
-      const name = (prompt('Save this layout to the tray? Name it (leave blank to skip):', 'Layout '+(state.savedLayouts.length+1)) || '').trim();
-      if (name) { state.savedLayouts.push({ id:uid(), name, ...captureTemplate(bx) }); refreshTray(); }
-    } else if (bx.kind === 'unitplan') {
-      const count = state.boxes.filter(b=>b.kind==='unitplan').length;
-      const name = (prompt('Name this unit plan (leave blank to skip):', bx.name || ('Unit Plan '+count)) || '').trim();
-      if (name) { bx.name = name; refreshTray(); }
-    }
+    refreshTray();
   }
   // Enable only the drawable boundary tool; grey out the others.
   function updateToolAvailability(){
@@ -2218,7 +2121,7 @@
     else if(k==='e')setTool('eqdim');
     else if(k==='f')setTool('flexdim');
     else if(e.key==='Delete'||e.key==='Backspace')deleteSelection();
-    else if(e.key==='Escape'){drag=null;dimBuild=null;state.placing=null;state.selection=null;buildSavedLayoutsList();draw();}
+    else if(e.key==='Escape'){drag=null;dimBuild=null;state.selection=null;draw();}
     else if(e.key==='Home')fitView();
   });
   window.addEventListener('keyup', e=>{
