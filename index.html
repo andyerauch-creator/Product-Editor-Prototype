@@ -1914,11 +1914,11 @@
     const productName = (parent && parent.kind==='product') ? productDisplayName(parent) : 'Product';
     return { prefix: bx.name, suffix: '_'+productName };
   }
-  // Delete a Product/Unit Plan/Layout boundary (and its nested contents) via
-  // the shared deleteSelection() path, same as the canvas right-click menu uses.
+  // Delete a Product/Unit Plan/Layout boundary (and its nested contents) —
+  // the Library's own Delete button is the only place this is allowed from.
   function deleteBoundary(id){
     state.selection = { kind:'box', id };
-    deleteSelection();
+    deleteSelection({allowBoundary:true});
   }
   // Currently-open boundaries sort to the top of their list.
   const openFirst = (a,b) => (b.open?1:0) - (a.open?1:0);
@@ -2010,8 +2010,6 @@
       { label: bx.open ? 'Close' : 'Open', sc:'', disabled: lockedOpen, act:()=>{ if(bx.open) closeBoundary(bx); else openWithAncestors(bx); } },
       { label: 'Copy', sc:'Ctrl+C', act:()=>copyBox(boxId) },
       { label: 'Paste', sc:'Ctrl+V', act:()=>pasteClipboard(s2w({x,y})), disabled:!clipboard },
-      { divider:true },
-      { label: 'Delete', sc:'Del', danger:true, act:()=>{ state.multiSelection=[]; state.selection={kind:'box',id:boxId}; deleteSelection(); } },
     ];
     menuEl.innerHTML='';
     for (const it of items){
@@ -2144,14 +2142,13 @@
     // element/dim has no known owner and isn't included, same rule
     // drawLiveThumb uses.
     const owns = containerId => containerId!=null && boxIds.has(containerId);
-    const walls = state.walls.filter(wl=>owns(wl.containerId)).map(wl=>{
-      const a=endPos(wl.a), b=endPos(wl.b);
-      return { a:{x:a.x,y:a.y}, b:{x:b.x,y:b.y}, thickness: wl.thickness, containerId: wl.containerId };
-    });
-    const elements = state.elements.filter(el=>owns(el.containerId)).map(el=>{
-      const p=endPos(el.ref);
-      return { type: el.type, rot: el.rot, ref:{x:p.x,y:p.y}, containerId: el.containerId };
-    });
+    // Deep-clone walls/elements as-is (keeping their xRef/yRef intact) so
+    // insertSubtreeAt can remap the anchoring itself instead of losing it —
+    // a wall/element with no ref never had one, and stays that way; one
+    // that was anchored to a grid/edge should still be anchored, not just
+    // baked to a fixed point that drifts still when its host resizes.
+    const walls = state.walls.filter(wl=>owns(wl.containerId)).map(wl=>JSON.parse(JSON.stringify(wl)));
+    const elements = state.elements.filter(el=>owns(el.containerId)).map(el=>JSON.parse(JSON.stringify(el)));
     const dims = state.dims.filter(d=>owns(d.containerId)).map(d=>JSON.parse(JSON.stringify(d)));
     return { boxes, grids, walls, elements, dims };
   }
@@ -2229,8 +2226,7 @@
     rootBox.bind = { x1:refs.x1, y1:refs.y1, x2:refs.x2, y2:refs.y2 };
 
     // Boxes/grids go live now, before anything below needs to resolve
-    // against them (rebinding nested boxes, re-anchoring walls/elements,
-    // and any dim ref that needs a synthetic grid all read live state).
+    // against them (rebinding nested boxes reads live state).
     state.boxes.push(...data.boxes);
     state.gridlines.push(...data.grids);
     // Every non-root box in the subtree (e.g. a Layout nested inside an
@@ -2243,50 +2239,45 @@
       if (b.id !== rootId) rebindResizedEdges(b, ['x1','x2','y1','y2']);
     }
 
+    // Remap one wall/element endpoint: each axis that was anchored to a
+    // grid/edge inside the copied subtree stays anchored to that same
+    // (now-copied) feature; an axis that had no ref, or whose ref points
+    // outside the subtree, just falls back to its current resolved position
+    // rescaled — endPos() already prefers a resolved ref over the stored
+    // x/y, so storing the baked value as the fallback is always safe and
+    // never fabricates new geometry (no synthetic grid lines).
+    const remapEndpoint = ep => {
+      const p = endPos(ep);
+      return {
+        x: fx(p.x), y: fy(p.y),
+        xRef: ep.xRef ? remapRef(ep.xRef) : null,
+        yRef: ep.yRef ? remapRef(ep.yRef) : null,
+      };
+    };
     data.walls.forEach(wl=>{
       wl.id=uid();
-      wl.a={ x:fx(wl.a.x), y:fy(wl.a.y), xRef:null, yRef:null };
-      wl.b={ x:fx(wl.b.x), y:fy(wl.b.y), xRef:null, yRef:null };
+      wl.a=remapEndpoint(wl.a);
+      wl.b=remapEndpoint(wl.b);
       // each wall keeps belonging to whichever box in the subtree it was
       // drawn in (could be a nested Layout, not just the top-level root)
       wl.containerId=remap(wl.containerId) ?? rootId;
     });
     data.elements.forEach(el=>{
       el.id=uid();
-      el.ref={ x:fx(el.ref.x), y:fy(el.ref.y), xRef:null, yRef:null };
+      el.ref=remapEndpoint(el.ref);
       el.containerId=remap(el.containerId) ?? rootId;
     });
-    // A dim built inside the source Layout/Unit Plan can still reference a
-    // grid/edge that lives OUTSIDE it (e.g. the enclosing container's own
-    // edge — pickReference doesn't scope to what's open when drawing dims).
-    // remapRef can't map those (they're not part of the copied subtree), so
-    // instead of dropping the reference (and likely the whole dimension),
-    // bake its current position into a brand-new free grid line inside the
-    // copy. It won't track the original anymore, but the dimension survives
-    // the copy with the right position.
-    const refOrBaked = ref => {
-      const mapped = remapRef(ref);
-      if (mapped) return mapped;
-      const worldCoord = resolveRef(ref);
-      if (worldCoord == null) return null;
-      const isV = ref.type==='grid'
-        ? (findById(state.gridlines, ref.id)||{}).type==='v'
-        : (ref.edge==='x1'||ref.edge==='x2');
-      const gid = uid();
-      // grids already went live above, so a synthetic one goes straight to
-      // state instead of the (already-flushed) local data.grids array
-      state.gridlines.push({ id:gid, type: isV?'v':'h', pos: isV?fx(worldCoord):fy(worldCoord), boxId:null });
-      return { type:'grid', id:gid };
-    };
-    // Dimensions: remap their references the same way box bindings are
-    // remapped above (baking any out-of-subtree reference instead of
-    // dropping it), rescale the dimension-line position and (for locked/
-    // EQ/flex dims) their driven distances by the same factor the geometry
-    // itself was rescaled by, and drop any dim left with under 2 refs.
+    // Dimensions: remap their references the same way (a ref to something
+    // outside the copied subtree — e.g. a dim inside a Layout that measures
+    // to the enclosing Unit Plan's own edge — just gets dropped, same as
+    // remapRef already does; never fabricate a stand-in grid line for it),
+    // rescale the dimension-line position and, for locked/EQ/flex dims,
+    // their driven distances, by the same factor the geometry itself was
+    // rescaled by. A dim left with under 2 refs is dropped entirely.
     data.dims = data.dims.map(d=>{
       d.id = remapDimId(d.id);
       d.containerId = remap(d.containerId) ?? rootId;
-      d.refs = d.refs.map(refOrBaked).filter(Boolean);
+      d.refs = d.refs.map(remapRef).filter(Boolean);
       if (d.refs.length < 2) return null;
       d.line = d.axis==='h' ? fy(d.line) : fx(d.line);
       const contBox = findById(data.boxes, d.containerId);
@@ -2296,9 +2287,9 @@
         d.drives = d.drives.map(dr=>{
           const nd = {...dr};
           if (nd.gridId!=null) nd.gridId = remap(nd.gridId);
-          if (nd.anchorRef) nd.anchorRef = refOrBaked(nd.anchorRef);
-          if (nd.anchorA) nd.anchorA = refOrBaked(nd.anchorA);
-          if (nd.anchorB) nd.anchorB = refOrBaked(nd.anchorB);
+          if (nd.anchorRef) nd.anchorRef = remapRef(nd.anchorRef);
+          if (nd.anchorA) nd.anchorA = remapRef(nd.anchorA);
+          if (nd.anchorB) nd.anchorB = remapRef(nd.anchorB);
           if (nd.dimId!=null) nd.dimId = remapDimId(nd.dimId);
           if (nd.offset!==undefined) {
             const g = findById(data.grids, nd.gridId);
@@ -2307,8 +2298,8 @@
           return nd;
         }).filter(dr=>dr.gridId!=null);
       }
-      if (d.firstRef) d.firstRef = refOrBaked(d.firstRef);
-      if (d.lastRef) d.lastRef = refOrBaked(d.lastRef);
+      if (d.firstRef) d.firstRef = remapRef(d.firstRef);
+      if (d.lastRef) d.lastRef = remapRef(d.lastRef);
       if (d.flex && d.segLens) {
         const axisScale = d.axis==='h' ? (tW/oW) : (tH/oH);
         d.segLens = d.segLens.map(l=>l*axisScale);
@@ -2320,12 +2311,6 @@
     state.walls.push(...data.walls);
     state.elements.push(...data.elements);
     state.dims.push(...data.dims);
-    // snap walls/elements onto the newly-placed grid system where they land cleanly
-    data.walls.forEach(wl=>reanchorWall(wl));
-    data.elements.forEach(el=>{
-      const a=anchorAt(el.ref, 16/ppfNow());
-      if (a) { el.ref.x=a.x; el.ref.y=a.y; el.ref.xRef=a.xRef; el.ref.yRef=a.yRef; }
-    });
     relabelGrid();
     state.selection={kind:'box', id:rootId};
     refreshTray();
@@ -2492,7 +2477,11 @@
   // Delete one selection-shaped target ({kind,id}) — a wall, element, dim,
   // grid, or box (with its descendant boxes/grids). Shared by single delete
   // and the multi-select bulk delete below.
-  function deleteOne(s){
+  // A Product/Unit Plan/Layout boundary can only be deleted from the
+  // Library panel (opts.allowBoundary) — deleting it from the canvas (Del
+  // key, right-click menu) is a no-op instead, so a stray delete can't
+  // wipe out a whole nested structure by accident.
+  function deleteOne(s, opts={}){
     if(s.kind==='wall')state.walls=state.walls.filter(w=>w.id!==s.id);
     if(s.kind==='element')state.elements=state.elements.filter(el=>el.id!==s.id);
     if(s.kind==='dim')state.dims=state.dims.filter(d=>d.id!==s.id);
@@ -2503,6 +2492,7 @@
       relabelGrid();
     }
     if(s.kind==='box'){
+      if(!opts.allowBoundary) return;
       // remove the box, its descendant boxes, the grid lines bound to them,
       // and the walls/elements/dims that belong to any of them
       bakeAllWallCoords();
@@ -2518,10 +2508,10 @@
       relabelGrid();
     }
   }
-  function deleteSelection(){
+  function deleteSelection(opts={}){
     const targets = state.multiSelection.length ? state.multiSelection : (state.selection ? [state.selection] : []);
     if (!targets.length) return;
-    for (const s of targets) deleteOne(s);
+    for (const s of targets) deleteOne(s, opts);
     refreshTray(); // wall/element/grid/box removal can all change a preview's contents
     saveStateToStorage(); // deletes always persist immediately, so they can't come back on reload
     state.selection=null; state.multiSelection=[]; draw();
