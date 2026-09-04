@@ -2228,6 +2228,21 @@
     // nested boundary bound to its host's grids/edges
     rootBox.bind = { x1:refs.x1, y1:refs.y1, x2:refs.x2, y2:refs.y2 };
 
+    // Boxes/grids go live now, before anything below needs to resolve
+    // against them (rebinding nested boxes, re-anchoring walls/elements,
+    // and any dim ref that needs a synthetic grid all read live state).
+    state.boxes.push(...data.boxes);
+    state.gridlines.push(...data.grids);
+    // Every non-root box in the subtree (e.g. a Layout nested inside an
+    // inserted Unit Plan) still needs its edges locked to ITS host's grids/
+    // edges, exactly like a normally-drawn nested boundary — the wholesale
+    // bind reset above only accounted for the root, so without this a
+    // nested box's edges just sit at fixed numbers and stop tracking its
+    // parent's grids the moment anything moves or resizes.
+    for (const b of data.boxes) {
+      if (b.id !== rootId) rebindResizedEdges(b, ['x1','x2','y1','y2']);
+    }
+
     data.walls.forEach(wl=>{
       wl.id=uid();
       wl.a={ x:fx(wl.a.x), y:fy(wl.a.y), xRef:null, yRef:null };
@@ -2258,7 +2273,9 @@
         ? (findById(state.gridlines, ref.id)||{}).type==='v'
         : (ref.edge==='x1'||ref.edge==='x2');
       const gid = uid();
-      data.grids.push({ id:gid, type: isV?'v':'h', pos: isV?fx(worldCoord):fy(worldCoord), boxId:null });
+      // grids already went live above, so a synthetic one goes straight to
+      // state instead of the (already-flushed) local data.grids array
+      state.gridlines.push({ id:gid, type: isV?'v':'h', pos: isV?fx(worldCoord):fy(worldCoord), boxId:null });
       return { type:'grid', id:gid };
     };
     // Dimensions: remap their references the same way box bindings are
@@ -2300,8 +2317,6 @@
       return d;
     }).filter(Boolean);
 
-    state.boxes.push(...data.boxes);
-    state.gridlines.push(...data.grids);
     state.walls.push(...data.walls);
     state.elements.push(...data.elements);
     state.dims.push(...data.dims);
