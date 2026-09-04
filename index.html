@@ -882,6 +882,15 @@
     }
     return best;
   }
+  // The Unit Plan/Layout you currently have open (Product Editor's nested
+  // flow) can't be stretched by its own corners while you're inside it —
+  // everything drawn against its edges (walls, grids, dims) would have to
+  // rebind out from under you. Its own children resize normally; only ITS
+  // boundary is locked, and only while it's the active (deepest-open) one.
+  function boxResizeLocked(boxId){
+    const ac = activeContainer();
+    return !!(ac && ac.id===boxId && ac.parentId!=null && (ac.kind==='unitplan'||ac.kind==='layout'));
+  }
   function resizeBox(drag, cur) {
     const bx = findById(state.boxes, drag.id);
     if (!bx.bind) bx.bind = {x1:null,y1:null,x2:null,y2:null};
@@ -1605,7 +1614,7 @@
         if (hit.kind==='box') {
           const bx = findById(state.boxes, hit.id);
           const corner = boxCornerAt(bx, sp);
-          if (corner) {
+          if (corner && !boxResizeLocked(bx.id)) {
             state.selection = { kind:'box', id:bx.id };
             drag = { kind:'resizeBox', id:bx.id, corner };
             draw(); return;
@@ -1617,7 +1626,7 @@
         const cornerHit = boxCornerUnder(sp);
         const wallFirst = hit && hit.kind==='wall' && state.selection
           && state.selection.kind==='wall' && state.selection.id===hit.id;
-        if (cornerHit && !wallFirst) {
+        if (cornerHit && !wallFirst && !boxResizeLocked(cornerHit.box.id)) {
           state.selection = { kind:'box', id:cornerHit.box.id };
           drag = { kind:'resizeBox', id:cornerHit.box.id, corner:cornerHit.corner };
           draw(); return;
