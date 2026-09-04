@@ -2487,11 +2487,16 @@
   // every OTHER editor. An archived entry always passes (it never recorded a
   // parent) and a branch living at this SAME parentId (made without ever
   // leaving this level) always passes too.
+  // `extraBranchParentIds` widens ONLY the branch check, never the root
+  // check — used by the Insert panel: a branch made by inserting-then-
+  // branching a standalone master directly into the currently open Product
+  // is nested (parentId = that Product), not standalone, but it's still
+  // fair game to insert again from anywhere else in that SAME Product.
   // Omit `parentId` entirely to see every family/branch regardless of
   // parent — used only once a specific root's id is already known AND the
   // list that found it already vetted its branches (so re-deriving here
   // isn't re-hiding anything the list wouldn't have shown a star for).
-  function buildLibraryGroups(kind, parentId){
+  function buildLibraryGroups(kind, parentId, extraBranchParentIds){
     const byId = new Map();
     for (const b of state.boxes) if (b.kind===kind && !b.isInstance) byId.set(b.id, {live:true, obj:b});
     for (const a of state.archived) if (a.kind===kind) byId.set(a.id, {live:false, obj:a});
@@ -2505,7 +2510,8 @@
     let list = [...groups.values()].filter(g=>g.root);
     if (parentId !== undefined) {
       list = list.filter(g => !g.root.live || g.root.obj.parentId === parentId);
-      for (const g of list) g.branches = g.branches.filter(e => !e.live || e.obj.parentId === parentId);
+      const allowed = new Set([parentId, ...(extraBranchParentIds||[])]);
+      for (const g of list) g.branches = g.branches.filter(e => !e.live || allowed.has(e.obj.parentId));
     }
     list.sort((a,b)=>{
       const ao=a.root.live&&a.root.obj.open, bo=b.root.live&&b.root.obj.open;
@@ -3121,8 +3127,14 @@
     // standalone Layouts, ones actually authored in the Layout Editor) —
     // inserting into a NESTED container (Product Editor's own unchanged
     // flow) stays unscoped, exactly as it's always behaved.
-    const insertParentId = activeContainer().parentId==null ? null : undefined;
-    for (const g of buildLibraryGroups(kind, insertParentId)) {
+    const ac = activeContainer();
+    const insertParentId = ac.parentId==null ? null : undefined;
+    // A branch made by inserting-then-branching a master directly into THIS
+    // same open container (Product, or a standalone Unit Plan) is nested
+    // (parentId = this container's own id), not standalone — but you're
+    // literally inside the place it lives, so it's still offered here.
+    const insertExtraParentIds = insertParentId===null ? [ac.id] : [];
+    for (const g of buildLibraryGroups(kind, insertParentId, insertExtraParentIds)) {
       // Elements don't branch, and aren't placed through the 4-corner
       // insert flow — clicking one arms it, then the next canvas click
       // drops it (same grid/edge snapping a built-in fixture uses).
