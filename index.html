@@ -3740,11 +3740,18 @@
       // standalone archived entry, not just the one you directly deleted.
       // An inserted instance isn't archived (it's not a master; the
       // original it came from is already archived/listed on its own).
+      // A live BRANCH (rootId set — an un-approved one; Approve clears it)
+      // isn't archived either, for a different reason: an archived entry
+      // always bypasses the parentId scoping buildLibraryGroups otherwise
+      // applies to branches, so archiving one would make an unpushed branch
+      // suddenly visible (its star, its Insert card) from every OTHER
+      // editor/Product too. Deleting it is meant to erase it, full stop —
+      // it's a customization of wherever it lived, not a reusable master.
       for (const b of collectSubtree(s.id).boxes) {
         const box = findById(state.boxes, b.id);
         // reuse the box's own id for the archived entry (not a fresh uid) so
         // any instance's masterId still resolves to it after archiving
-        if (box && !box.isInstance) {
+        if (box && !box.isInstance && box.rootId==null) {
           state.archived.push({ id: box.id, kind: box.kind, name: box.name,
             rootId: box.rootId, branchCount: box.branchCount, // keep its place (and, if it's a root, its branch counter) in the Library's family tree
             snapshot: collectSubtreeFull(box.id) });
