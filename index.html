@@ -172,9 +172,9 @@
 
   #main { display: flex; flex: 1; min-height: 0; }
   .panel {
-    width: 232px; flex-shrink: 0;
+    width: 232px; flex-shrink: 0; min-width: 0;
     background: var(--panel); border-right: 1px solid var(--border);
-    display: flex; flex-direction: column; overflow-y: auto;
+    display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden;
   }
   .panel[hidden] { display: none; }
   .panel h3 { font-size: 13px; font-weight: 600; padding: 14px 14px 10px; color: var(--ink); border-bottom: 1px solid var(--border); margin-bottom: 10px; }
@@ -184,6 +184,12 @@
   .panel .item {
     border-radius: 8px; cursor: pointer; overflow: visible; position: relative;
     display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; text-align: center;
+    /* A grid item's automatic min-width is its content's min-content size by
+       default, which a long name (a branch's is often long — "X_4_Product
+       Name") can make wider than the track it's meant to share — blowing the
+       2-column grid to a lopsided 1-and-a-sliver split. min-width:0 lets it
+       shrink to the assigned track instead; the name/dims still ellipsize. */
+    min-width: 0;
   }
   .panel .item:hover { background: var(--raised); }
   .panel .item canvas {
@@ -204,7 +210,7 @@
   .panel .item .nm input[type=text]:hover, .panel .item .nm input[type=text]:focus {
     background: var(--panel-2); border-color: var(--border);
   }
-  .panel .item .dims { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+  .panel .item .dims { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
   /* Hover-only action chip floating over the thumbnail's corner, not a
      permanent row — matches the real Library tile's per-file toolbar. */
   .panel .item .actions {
@@ -231,12 +237,24 @@
   /* An original with branches, once clicked, stays highlighted so it's
      clear which one the Branches tray to the right is currently showing. */
   .panel .item.lib-selected canvas { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  /* Marks a root's preview as having branches — the only rows that can open
-     the Branches/Versions tray. */
-  .panel .item .branch-star {
-    position: absolute; top: 5px; left: 6px; color: var(--pending); font-size: 13px;
+  /* Marks a root's preview as having branches. In the Insert panel this is a
+     real button (a decorative, non-interactive span everywhere else) — sized
+     up from a plain badge so it's actually easy to hit, since it's now the
+     ONLY way to reach that card's branches (the card itself always inserts). */
+  .panel .item span.branch-star {
+    position: absolute; top: 4px; left: 4px; color: var(--pending); font-size: 15px;
     text-shadow: 0 1px 2px rgba(255,255,255,.7); pointer-events: none;
   }
+  .panel .item button.branch-star {
+    position: absolute; top: 3px; left: 3px; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border: 1px solid transparent;
+    /* Concentric with the card's own 8px corner (.panel .item), inset by
+       this button's own 3px offset from it: 8 - 3 = 5px. */
+    border-radius: 5px;
+    background: none; color: var(--pending); pointer-events: auto; font-size: 16px; cursor: pointer;
+  }
+  .panel .item button.branch-star:hover { background: var(--pending-soft); border-color: var(--pending); }
   /* The only way to create a Product — sits above the Product list. */
   .panel .item.add-new {
     grid-column: 1 / -1;
@@ -3085,16 +3103,23 @@
   const insertPanelEl = document.getElementById('insertPanel');
   const insertTitleEl = document.getElementById('insertTitle');
   const insertListEl = document.getElementById('insertList');
-  // One card for the main Insert list or the Versions tray — `onCardClick`
-  // decides what clicking it does (open Versions vs. actually start the
-  // insert), same split as buildLibraryItem/buildKindList. `hasBranches`
-  // just draws the star badge — pass it only for a main-list root card.
-  function buildInsertCard(kind, entry, onCardClick, hasBranches){
+  // One card for the main Insert list or the Versions tray. Clicking the
+  // card itself always starts the insert — even when it has branches, that
+  // places THIS one (the original); `onStarClick` is the only way to reach
+  // its branches, wired to the star badge (now a real button) rather than
+  // hijacking the card's own click. Pass `onStarClick` only for a main-list
+  // root card that actually has branches — that's what draws the star.
+  function buildInsertCard(kind, entry, onCardClick, onStarClick){
     const { live, obj } = entry;
     const item=document.createElement('div');
     item.className='item'+(!live?' archived':'')+((state.inserting&&state.inserting.sourceId===obj.id)?' placing':'');
     const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
-    if (hasBranches) { const star=document.createElement('span'); star.className='branch-star'; star.textContent='★'; star.title='Has branches'; item.appendChild(star); }
+    if (onStarClick) {
+      const star=document.createElement('button'); star.type='button'; star.className='branch-star';
+      star.textContent='★'; star.title='Show branches';
+      star.addEventListener('click', e=>{ e.stopPropagation(); onStarClick(); });
+      item.appendChild(star);
+    }
     const nm=document.createElement('div'); nm.className='nm';
     const label=document.createElement('div'); label.className='label'; label.textContent=obj.name || KIND_LABEL[kind];
     nm.appendChild(label);
@@ -3139,10 +3164,14 @@
       // insert flow — clicking one arms it, then the next canvas click
       // drops it (same grid/edge snapping a built-in fixture uses).
       const hasBranches = kind!=='element' && g.branches.length>0;
+      // The card itself always starts placing THIS one (the original) —
+      // branches or not. The star is the only way to reach its branches now,
+      // so having one doesn't change what clicking the card does.
       const onClick = kind==='element'
         ? ()=>startPlaceElement(g.root.obj.id)
-        : (hasBranches ? ()=>selectInsertBranchRoot(kind, g.root.obj.id) : ()=>startInsert(g.root.obj.id));
-      const card = buildInsertCard(kind, g.root, onClick, hasBranches);
+        : ()=>startInsert(g.root.obj.id);
+      const onStarClick = hasBranches ? ()=>selectInsertBranchRoot(kind, g.root.obj.id) : null;
+      const card = buildInsertCard(kind, g.root, onClick, onStarClick);
       if (hasBranches && state.insertBranchRootId===g.root.obj.id) card.classList.add('lib-selected');
       if (kind==='element' && state.tool==='element:custom' && state.placingCustomElementId===g.root.obj.id) card.classList.add('placing');
       insertListEl.appendChild(card);
