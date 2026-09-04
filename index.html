@@ -2226,14 +2226,35 @@
       el.ref={ x:fx(el.ref.x), y:fy(el.ref.y), xRef:null, yRef:null };
       el.containerId=remap(el.containerId) ?? rootId;
     });
+    // A dim built inside the source Layout/Unit Plan can still reference a
+    // grid/edge that lives OUTSIDE it (e.g. the enclosing container's own
+    // edge — pickReference doesn't scope to what's open when drawing dims).
+    // remapRef can't map those (they're not part of the copied subtree), so
+    // instead of dropping the reference (and likely the whole dimension),
+    // bake its current position into a brand-new free grid line inside the
+    // copy. It won't track the original anymore, but the dimension survives
+    // the copy with the right position.
+    const refOrBaked = ref => {
+      const mapped = remapRef(ref);
+      if (mapped) return mapped;
+      const worldCoord = resolveRef(ref);
+      if (worldCoord == null) return null;
+      const isV = ref.type==='grid'
+        ? (findById(state.gridlines, ref.id)||{}).type==='v'
+        : (ref.edge==='x1'||ref.edge==='x2');
+      const gid = uid();
+      data.grids.push({ id:gid, type: isV?'v':'h', pos: isV?fx(worldCoord):fy(worldCoord), boxId:null });
+      return { type:'grid', id:gid };
+    };
     // Dimensions: remap their references the same way box bindings are
-    // remapped above, rescale the dimension-line position and (for locked/
+    // remapped above (baking any out-of-subtree reference instead of
+    // dropping it), rescale the dimension-line position and (for locked/
     // EQ/flex dims) their driven distances by the same factor the geometry
     // itself was rescaled by, and drop any dim left with under 2 refs.
     data.dims = data.dims.map(d=>{
       d.id = remapDimId(d.id);
       d.containerId = remap(d.containerId) ?? rootId;
-      d.refs = d.refs.map(remapRef).filter(Boolean);
+      d.refs = d.refs.map(refOrBaked).filter(Boolean);
       if (d.refs.length < 2) return null;
       d.line = d.axis==='h' ? fy(d.line) : fx(d.line);
       const contBox = findById(data.boxes, d.containerId);
@@ -2243,9 +2264,9 @@
         d.drives = d.drives.map(dr=>{
           const nd = {...dr};
           if (nd.gridId!=null) nd.gridId = remap(nd.gridId);
-          if (nd.anchorRef) nd.anchorRef = remapRef(nd.anchorRef);
-          if (nd.anchorA) nd.anchorA = remapRef(nd.anchorA);
-          if (nd.anchorB) nd.anchorB = remapRef(nd.anchorB);
+          if (nd.anchorRef) nd.anchorRef = refOrBaked(nd.anchorRef);
+          if (nd.anchorA) nd.anchorA = refOrBaked(nd.anchorA);
+          if (nd.anchorB) nd.anchorB = refOrBaked(nd.anchorB);
           if (nd.dimId!=null) nd.dimId = remapDimId(nd.dimId);
           if (nd.offset!==undefined) {
             const g = findById(data.grids, nd.gridId);
@@ -2254,8 +2275,8 @@
           return nd;
         }).filter(dr=>dr.gridId!=null);
       }
-      if (d.firstRef) d.firstRef = remapRef(d.firstRef);
-      if (d.lastRef) d.lastRef = remapRef(d.lastRef);
+      if (d.firstRef) d.firstRef = refOrBaked(d.firstRef);
+      if (d.lastRef) d.lastRef = refOrBaked(d.lastRef);
       if (d.flex && d.segLens) {
         const axisScale = d.axis==='h' ? (tW/oW) : (tH/oH);
         d.segLens = d.segLens.map(l=>l*axisScale);
