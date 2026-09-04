@@ -146,6 +146,8 @@
   }
   .panel .item:hover { border-color: var(--accent); }
   .panel .item.open { border-color: #ff5c5c; }
+  .panel .item.archived canvas { opacity: .55; }
+  .panel .item.archived .nm .suffix { color: #ff8a8a; }
   .panel .item.placing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .panel .item canvas { display: block; width: 100%; aspect-ratio: 1 / 1; background: var(--bg); border-bottom: 1px solid var(--border); }
   .panel .item .nm { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 6px 8px; color: var(--ink); }
@@ -304,6 +306,9 @@
     selection: null, // {kind, id}
     inserting: null, // {sourceId, picks:[{axis,ref,coord}]} while picking 4 grids to insert a copy
     multiSelection: [], // [{kind,id}, ...] from a click-drag marquee select
+    archived: [], // [{id, kind, name, snapshot}] — boundaries deleted from the
+                  // canvas, kept as reusable masters (Library/Insert still list
+                  // them, and you can still place fresh instances of them)
   };
   let nextId = 1;
   const uid = () => nextId++;
@@ -385,15 +390,18 @@
     return containerId === (ac ? ac.id : null);
   }
   // A boundary itself is only selectable/hoverable/openable one level below
-  // what's currently active (Products always; a Unit Plan only once its
-  // Product is open; a Layout only once its Unit Plan is open — you can't
-  // reach into or even highlight a level you haven't opened your way into),
-  // or the active container itself (so you can still select/resize the
-  // thing you're currently working inside).
+  // what's currently active (a Unit Plan only once its Product is open; a
+  // Layout only once its Unit Plan is open — you can't reach into or even
+  // highlight a level you haven't opened your way into), or the active
+  // container itself (so you can still select/resize the thing you're
+  // currently working inside). With nothing open, only top-level Products
+  // qualify — once you're inside one, its ancestors (a Product while a
+  // Unit Plan or Layout is open, a Unit Plan while its Layout is open)
+  // stop being selectable too, not just their un-opened descendants.
   function boxInteractable(box){
-    if (box.kind==='product') return true;
     const ac = activeContainer();
     const activeId = ac ? ac.id : null;
+    if (activeId===null) return box.kind==='product';
     return box.parentId === activeId || box.id === activeId;
   }
   function hitTest(wp) {
@@ -1863,6 +1871,84 @@
     }
     c.setLineDash([]);
   }
+  // Resolve a ref/endpoint against a frozen snapshot's own boxes/grids
+  // (collectSubtreeFull's output) instead of live state — used to preview a
+  // boundary that's been deleted from the canvas and archived.
+  function snapshotResolveRef(snapshot, ref){
+    if (!ref) return null;
+    if (ref.type==='grid') {
+      const g=findById(snapshot.grids, ref.id); if(!g) return null;
+      const bx=findById(snapshot.boxes, g.boxId); if(!bx) return null;
+      return g.type==='v' ? bx.x1+g.t*(bx.x2-bx.x1) : bx.y1+g.t*(bx.y2-bx.y1);
+    }
+    if (ref.type==='edge') { const bx=findById(snapshot.boxes, ref.boxId); return bx ? bx[ref.edge] : null; }
+    return null;
+  }
+  function snapshotEndPos(snapshot, ep){
+    const x = ep.xRef ? snapshotResolveRef(snapshot, ep.xRef) : null;
+    const y = ep.yRef ? snapshotResolveRef(snapshot, ep.yRef) : null;
+    return { x: x!=null?x:ep.x, y: y!=null?y:ep.y };
+  }
+  // Preview for an archived boundary (deleted from the canvas, kept as a
+  // reusable master) — same visual language as drawLiveThumb, but reads
+  // entirely from a frozen snapshot instead of live state. Every box/grid/
+  // wall/element/dim in the snapshot already belongs to it by construction
+  // (collectSubtreeFull only ever captured this one subtree), so there's no
+  // ownership filtering to do here.
+  function drawSnapshotThumb(canvas, snapshot){
+    const c=canvas.getContext('2d'), cw=canvas.width, ch=canvas.height, pad=8;
+    c.clearRect(0,0,cw,ch);
+    const root = snapshot.boxes[0];
+    const W=(root.x2-root.x1)||1, H=(root.y2-root.y1)||1;
+    const sc=Math.min((cw-2*pad)/W,(ch-2*pad)/H);
+    const ox=(cw-W*sc)/2, oy=(ch-H*sc)/2;
+    const SX=wx=>ox+(wx-root.x1)*sc, SY=wy=>oy+(wy-root.y1)*sc;
+    c.strokeStyle='#7e879a'; c.lineWidth=1; c.strokeRect(ox,oy,W*sc,H*sc);
+    c.setLineDash([2,2]);
+    for(const bx of snapshot.boxes){
+      if (bx.id===root.id) continue;
+      c.strokeStyle=boundaryColor(bx); c.lineWidth=1;
+      c.strokeRect(SX(bx.x1), SY(bx.y1), (bx.x2-bx.x1)*sc, (bx.y2-bx.y1)*sc);
+    }
+    c.setLineDash([]);
+    c.strokeStyle='#7da0d0'; c.setLineDash([3,2]);
+    for(const g of snapshot.grids){
+      const bx = findById(snapshot.boxes, g.boxId); if (!bx) continue;
+      const gp = g.type==='v' ? bx.x1+g.t*(bx.x2-bx.x1) : bx.y1+g.t*(bx.y2-bx.y1);
+      c.beginPath();
+      if(g.type==='v'){ const x=SX(gp); c.moveTo(x,SY(bx.y1)); c.lineTo(x,SY(bx.y2)); }
+      else { const y=SY(gp); c.moveTo(SX(bx.x1),y); c.lineTo(SX(bx.x2),y); }
+      c.stroke();
+    }
+    c.setLineDash([]);
+    for(const wl of snapshot.walls){
+      const a=snapshotEndPos(snapshot,wl.a), b=snapshotEndPos(snapshot,wl.b);
+      const ax=SX(a.x),ay=SY(a.y),bx=SX(b.x),by=SY(b.y);
+      const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1, hpx=Math.max(1.2,(wl.thickness||0.5)*sc/2), nx=-dy/len*hpx, ny=dx/len*hpx;
+      c.fillStyle='#e6e9ef'; c.beginPath(); c.moveTo(ax+nx,ay+ny);c.lineTo(bx+nx,by+ny);c.lineTo(bx-nx,by-ny);c.lineTo(ax-nx,ay-ny);c.closePath();c.fill();
+      c.strokeStyle='#5b6472';c.lineWidth=0.6;c.stroke();
+    }
+    for(const el of snapshot.elements){
+      const p=snapshotEndPos(snapshot, el.ref);
+      const {w,h,draw} = elementType(el);
+      c.save();
+      c.translate(SX(p.x), SY(p.y));
+      c.rotate((el.rot||0)*Math.PI/180);
+      c.scale(sc, sc);
+      draw(c, { fill:'#c2c8d2', stroke:'#6b7280', lineWidth: 1/sc }, w, h);
+      c.restore();
+    }
+    c.strokeStyle='#ffb454'; c.lineWidth=1; c.setLineDash([3,2]);
+    for(const d of snapshot.dims){
+      const coords = d.refs.map(r=>snapshotResolveRef(snapshot,r)).filter(v=>v!=null);
+      if (coords.length<2) continue;
+      const lo=Math.min(...coords), hi=Math.max(...coords), L=d.line;
+      const p1 = d.axis==='h' ? {x:lo,y:L} : {x:L,y:lo};
+      const p2 = d.axis==='h' ? {x:hi,y:L} : {x:L,y:hi};
+      c.beginPath(); c.moveTo(SX(p1.x),SY(p1.y)); c.lineTo(SX(p2.x),SY(p2.y)); c.stroke();
+    }
+    c.setLineDash([]);
+  }
   // ---- Local persistence -----------------------------------------------------
   // Everything lives in one browser-local save file (grids/walls/dims all
   // reference each other across boxes, so there's no meaningful way to save
@@ -1873,7 +1959,7 @@
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         nextId, boxes: state.boxes, gridlines: state.gridlines, walls: state.walls,
-        elements: state.elements, dims: state.dims,
+        elements: state.elements, dims: state.dims, archived: state.archived,
       }));
       return true;
     } catch(e) { return false; } // storage unavailable (private mode, disabled, quota) — no-op
@@ -1888,6 +1974,7 @@
       if (data.walls) state.walls = data.walls;
       if (data.elements) state.elements = data.elements;
       if (data.dims) state.dims = data.dims;
+      if (data.archived) state.archived = data.archived;
       if (typeof data.nextId === 'number') nextId = data.nextId;
     } catch(e) { /* corrupt or unavailable — start blank */ }
   }
@@ -1926,18 +2013,49 @@
     const productName = (parent && parent.kind==='product') ? productDisplayName(parent) : 'Product';
     return { prefix: bx.name, suffix: '_'+productName };
   }
-  // Delete a Product/Unit Plan/Layout boundary (and its nested contents) via
-  // the shared deleteSelection() path, same as the canvas right-click menu uses.
+  // Delete a live Product/Unit Plan/Layout boundary from the Library — this
+  // is the one place a boundary is actually, permanently gone (no archive):
+  // deleting it from the canvas itself archives a reusable copy instead,
+  // see deleteOne().
   function deleteBoundary(id){
-    state.selection = { kind:'box', id };
-    deleteSelection();
+    removeBoxSubtree(id);
+    if (state.selection && state.selection.kind==='box' && state.selection.id===id) state.selection=null;
+    refreshTray();
+    saveStateToStorage();
+    draw();
+  }
+  // Permanently forget an archived (deleted-from-canvas) master.
+  function deleteArchivedMaster(id){
+    state.archived = state.archived.filter(a=>a.id!==id);
+    refreshTray();
+    saveStateToStorage();
+    draw();
   }
   // Currently-open boundaries sort to the top of their list.
   const openFirst = (a,b) => (b.open?1:0) - (a.open?1:0);
+  // A card for a boundary deleted from the canvas — still nameable, still
+  // insertable, just previewed from its frozen snapshot instead of live
+  // state, and flagged so it's clear it isn't actually on the canvas.
+  function buildArchivedCard(a){
+    const item=document.createElement('div'); item.className='item archived';
+    const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
+    const nm=document.createElement('div'); nm.className='nm';
+    const inp=document.createElement('input'); inp.type='text'; inp.value=a.name||'';
+    inp.placeholder='Name this '+KIND_LABEL[a.kind].toLowerCase();
+    inp.addEventListener('click', e=>e.stopPropagation());
+    inp.addEventListener('input', ()=>{ a.name=inp.value; });
+    const tag=document.createElement('span'); tag.className='suffix'; tag.textContent='not on canvas';
+    nm.appendChild(inp); nm.appendChild(tag);
+    item.appendChild(nm);
+    item.appendChild(makeActionsRow(()=>deleteArchivedMaster(a.id)));
+    drawSnapshotThumb(cv2, a.snapshot);
+    return item;
+  }
   const productsListEl=document.getElementById('productsList');
   function buildProductsList(){
     const products = state.boxes.filter(b=>b.kind==='product' && !b.isInstance).sort(openFirst);
-    if(!products.length){ productsListEl.innerHTML=''; return; }
+    const archived = state.archived.filter(a=>a.kind==='product');
+    if(!products.length && !archived.length){ productsListEl.innerHTML=''; return; }
     productsListEl.innerHTML='';
     for(const bx of products){
       const item=document.createElement('div'); item.className='item'+(bx.open?' open':'');
@@ -1953,11 +2071,13 @@
       productsListEl.appendChild(item);
       drawLiveThumb(cv2, bx);
     }
+    for(const a of archived) productsListEl.appendChild(buildArchivedCard(a));
   }
   const unitplansListEl=document.getElementById('unitplansList');
   function buildUnitplansList(){
     const plans = state.boxes.filter(b=>b.kind==='unitplan' && !b.isInstance).sort(openFirst);
-    if(!plans.length){ unitplansListEl.innerHTML=''; return; }
+    const archived = state.archived.filter(a=>a.kind==='unitplan');
+    if(!plans.length && !archived.length){ unitplansListEl.innerHTML=''; return; }
     unitplansListEl.innerHTML='';
     for(const bx of plans){
       const {prefix,suffix} = unitplanDisplayName(bx);
@@ -1975,11 +2095,13 @@
       unitplansListEl.appendChild(item);
       drawLiveThumb(cv2, bx);
     }
+    for(const a of archived) unitplansListEl.appendChild(buildArchivedCard(a));
   }
   const layoutsListEl=document.getElementById('layoutsList');
   function buildLayoutsList(){
     const layouts = state.boxes.filter(b=>b.kind==='layout' && !b.isInstance).sort(openFirst);
-    if(!layouts.length){ layoutsListEl.innerHTML=''; return; }
+    const archived = state.archived.filter(a=>a.kind==='layout');
+    if(!layouts.length && !archived.length){ layoutsListEl.innerHTML=''; return; }
     layoutsListEl.innerHTML='';
     for(const bx of layouts){
       const item=document.createElement('div'); item.className='item'+(bx.open?' open':'');
@@ -1995,6 +2117,7 @@
       layoutsListEl.appendChild(item);
       drawLiveThumb(cv2, bx);
     }
+    for(const a of archived) layoutsListEl.appendChild(buildArchivedCard(a));
   }
   // Only the section matching what you currently have open is shown — the
   // rest hide, so the Library always tracks the level you're working at.
@@ -2196,7 +2319,10 @@
     const tW=tX2-tX1, tH=tY2-tY1;
     if (tW<0.1 || tH<0.1) return;
 
-    const src = collectSubtreeFull(sourceId);
+    // The source can be a live box, or an archived (deleted-from-canvas)
+    // master — in which case its subtree was already captured at delete time.
+    const archivedEntry = findById(state.archived, sourceId);
+    const src = archivedEntry ? archivedEntry.snapshot : collectSubtreeFull(sourceId);
     const data = JSON.parse(JSON.stringify(src));
     const rootOrig = data.boxes[0];
     const origRootId = rootOrig.id; // copy by value — rootOrig.id gets overwritten below
@@ -2355,6 +2481,19 @@
       insertListEl.appendChild(item);
       drawLiveThumb(cv2, bx);
     }
+    for (const a of state.archived.filter(a=>a.kind===kind)) {
+      const item=document.createElement('div');
+      item.className='item archived'+(state.inserting&&state.inserting.sourceId===a.id?' placing':'');
+      const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
+      const nm=document.createElement('div'); nm.className='nm';
+      const label=document.createElement('div'); label.className='label'; label.textContent=a.name || KIND_LABEL[kind];
+      const tag=document.createElement('span'); tag.className='suffix'; tag.textContent='not on canvas';
+      nm.appendChild(label); nm.appendChild(tag);
+      item.appendChild(nm);
+      item.addEventListener('click', ()=>startInsert(a.id));
+      insertListEl.appendChild(item);
+      drawSnapshotThumb(cv2, a.snapshot);
+    }
   }
 
   // ---- Tools / UI -----------------------------------------------------------
@@ -2480,6 +2619,23 @@
   // Delete one selection-shaped target ({kind,id}) — a wall, element, dim,
   // grid, or box (with its descendant boxes/grids). Shared by single delete
   // and the multi-select bulk delete below.
+  // Remove a box, its descendant boxes, the grid lines bound to them, and
+  // the walls/elements/dims that belong to any of them — pure removal, no
+  // archiving. Used directly by the Library's own Delete (a real, final
+  // delete) and by deleteOne (after it archives) for a canvas delete.
+  function removeBoxSubtree(id){
+    bakeAllWallCoords();
+    const sub = collectSubtree(id);
+    const boxIds = new Set(sub.boxes.map(b=>b.id));
+    const gridIds = new Set(sub.grids.map(g=>g.id));
+    state.gridlines = state.gridlines.filter(g=>!gridIds.has(g.id));
+    clearRefsTo(boxIds, gridIds); // edges/endpoints bound to removed features go free
+    state.boxes = state.boxes.filter(b=>!boxIds.has(b.id));
+    state.walls = state.walls.filter(w=>!boxIds.has(w.containerId));
+    state.elements = state.elements.filter(el=>!boxIds.has(el.containerId));
+    state.dims = state.dims.filter(d=>!boxIds.has(d.containerId));
+    relabelGrid();
+  }
   function deleteOne(s){
     if(s.kind==='wall')state.walls=state.walls.filter(w=>w.id!==s.id);
     if(s.kind==='element')state.elements=state.elements.filter(el=>el.id!==s.id);
@@ -2491,19 +2647,16 @@
       relabelGrid();
     }
     if(s.kind==='box'){
-      // remove the box, its descendant boxes, the grid lines bound to them,
-      // and the walls/elements/dims that belong to any of them
-      bakeAllWallCoords();
-      const sub = collectSubtree(s.id);
-      const boxIds = new Set(sub.boxes.map(b=>b.id));
-      const gridIds = new Set(sub.grids.map(g=>g.id));
-      state.gridlines = state.gridlines.filter(g=>!gridIds.has(g.id));
-      clearRefsTo(boxIds, gridIds); // edges/endpoints bound to removed features go free
-      state.boxes = state.boxes.filter(b=>!boxIds.has(b.id));
-      state.walls = state.walls.filter(w=>!boxIds.has(w.containerId));
-      state.elements = state.elements.filter(el=>!boxIds.has(el.containerId));
-      state.dims = state.dims.filter(d=>!boxIds.has(d.containerId));
-      relabelGrid();
+      // Deleting a Product/Unit Plan/Layout from the canvas doesn't erase
+      // it — it archives a full snapshot first (so the Library/Insert can
+      // still show and re-place it), then removes the live copy. An
+      // inserted instance isn't archived (it's not a master; the original
+      // it came from is already archived/listed on its own).
+      const box = findById(state.boxes, s.id);
+      if (box && !box.isInstance) {
+        state.archived.push({ id: uid(), kind: box.kind, name: box.name, snapshot: collectSubtreeFull(s.id) });
+      }
+      removeBoxSubtree(s.id);
     }
   }
   function deleteSelection(){
