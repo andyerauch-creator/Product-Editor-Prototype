@@ -2480,12 +2480,17 @@
   // deeper tree.
   // `parentId`, when given (including explicitly null for "standalone/top-
   // level only"), restricts which FAMILIES show up to ones whose ROOT lives
-  // there — a branch is never excluded by this (it's just wherever it got
-  // inserted, unrelated to where its family is browsed from), and an
-  // archived root always passes (archived entries never recorded a parent).
-  // Omit `parentId` entirely to see every family regardless of the root's
-  // parent — used when a specific root's id is already known (the Branches/
-  // Versions tray) and its neighborhood doesn't matter anymore.
+  // there, and ALSO which of the family's BRANCHES are visible: a live
+  // branch nested somewhere else (a different parentId — almost always a
+  // branch made inside some other Product) stays invisible here until its
+  // Product is Pushed, exactly like a fresh unpushed branch is invisible to
+  // every OTHER editor. An archived entry always passes (it never recorded a
+  // parent) and a branch living at this SAME parentId (made without ever
+  // leaving this level) always passes too.
+  // Omit `parentId` entirely to see every family/branch regardless of
+  // parent — used only once a specific root's id is already known AND the
+  // list that found it already vetted its branches (so re-deriving here
+  // isn't re-hiding anything the list wouldn't have shown a star for).
   function buildLibraryGroups(kind, parentId){
     const byId = new Map();
     for (const b of state.boxes) if (b.kind===kind && !b.isInstance) byId.set(b.id, {live:true, obj:b});
@@ -2498,7 +2503,10 @@
       else groupFor(rid).branches.push(entry);
     }
     let list = [...groups.values()].filter(g=>g.root);
-    if (parentId !== undefined) list = list.filter(g => !g.root.live || g.root.obj.parentId === parentId);
+    if (parentId !== undefined) {
+      list = list.filter(g => !g.root.live || g.root.obj.parentId === parentId);
+      for (const g of list) g.branches = g.branches.filter(e => !e.live || e.obj.parentId === parentId);
+    }
     list.sort((a,b)=>{
       const ao=a.root.live&&a.root.obj.open, bo=b.root.live&&b.root.obj.open;
       if (ao!==bo) return ao?-1:1;
