@@ -408,6 +408,11 @@
                   // rounded-rects and lines an Element (drawn in the Element Editor)
                   // is made of. elementId is the top-level 'element' box that owns it.
     showDims: { product:true, unitplan:true, layout:true, element:true }, // dim visibility per container kind
+    cancelSnapshots: {}, // boxId -> collectSubtreeFull() taken the moment a nested
+                  // Unit Plan/Layout was opened in Product Editor, so "Close and
+                  // Cancel" can throw away everything done since and revert to
+                  // it — transient (not persisted): a reload already discards
+                  // any unsaved edit, so there's nothing to restore across one.
     selection: null, // {kind, id}
     inserting: null, // {sourceId, picks:[{axis,ref,coord}]} while picking 4 grids to insert a copy
     multiSelection: [], // [{kind,id}, ...] from a click-drag marquee select
@@ -1062,7 +1067,7 @@
       const e=boxExt(b), p1=w2s({x:e.x1,y:e.y1}), p2=w2s({x:e.x2,y:e.y2});
       const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y), ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
       ctx.beginPath(); ctx.rect(0,0,W,H); ctx.rect(x,y,ww,hh);
-      ctx.fillStyle='rgba(255,255,255,.5)'; ctx.fill('evenodd');
+      ctx.fillStyle='rgba(255,255,255,.6)'; ctx.fill('evenodd');
     }
   }
 
@@ -1237,7 +1242,7 @@
       if (sh.kind==='rect') {
         const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y), w=Math.abs(p2.x-p1.x), h=Math.abs(p2.y-p1.y);
         roundRectPath(ctx, x, y, w, h, Math.min(10, Math.min(w,h)/4));
-        ctx.fillStyle = sel ? '#e1e4e7' : '#eceef0';
+        ctx.fillStyle = sel ? '#f0f2f3' : '#f6f7f8';
         ctx.fill();
         ctx.strokeStyle = sel ? '#ea580c' : '#3a4150';
         ctx.lineWidth = sel ? 2 : 1.2;
@@ -1915,7 +1920,7 @@
       if (drag.shapeKind==='rect') {
         const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y), ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
         roundRectPath(ctx, x, y, ww, hh, Math.min(10, Math.min(ww,hh)/4));
-        ctx.fillStyle='rgba(236,238,240,.85)'; ctx.fill();
+        ctx.fillStyle='rgba(246,247,248,.85)'; ctx.fill();
         ctx.strokeStyle='#ea580c'; ctx.lineWidth=1.2; ctx.stroke();
         labelAt(p2, `${fmtFeet(Math.abs(drag.x2-drag.x1))} × ${fmtFeet(Math.abs(drag.y2-drag.y1))}`);
       } else {
@@ -2193,7 +2198,7 @@
       if (sh.kind==='rect') {
         const x=Math.min(p1x,p2x), y=Math.min(p1y,p2y), ww=Math.abs(p2x-p1x), hh=Math.abs(p2y-p1y);
         roundRectPath(c, x, y, ww, hh, Math.min(4, Math.min(ww,hh)/4));
-        c.fillStyle='#eceef0'; c.fill();
+        c.fillStyle='#f6f7f8'; c.fill();
         c.strokeStyle='#3a4150'; c.lineWidth=1; c.stroke();
       } else {
         c.strokeStyle='#3a4150'; c.lineWidth=1; c.beginPath(); c.moveTo(p1x,p1y); c.lineTo(p2x,p2y); c.stroke();
@@ -2287,7 +2292,7 @@
       if (sh.kind==='rect') {
         const x=Math.min(p1x,p2x), y=Math.min(p1y,p2y), ww=Math.abs(p2x-p1x), hh=Math.abs(p2y-p1y);
         roundRectPath(c, x, y, ww, hh, Math.min(4, Math.min(ww,hh)/4));
-        c.fillStyle='#eceef0'; c.fill();
+        c.fillStyle='#f6f7f8'; c.fill();
         c.strokeStyle='#3a4150'; c.lineWidth=1; c.stroke();
       } else {
         c.strokeStyle='#3a4150'; c.lineWidth=1; c.beginPath(); c.moveTo(p1x,p1y); c.lineTo(p2x,p2y); c.stroke();
@@ -2595,6 +2600,11 @@
     // get a branch option at all — they only ever save to main.
     const canBranch = bx.kind!=='product';
     const saveToMainItem = { label:'Close and save to main', sc:'', disabled:lockedOpen, act:()=>{ saveToMain(bx.id); closeBoundary(bx); } };
+    // Only a nested Unit Plan/Layout gets a cancel snapshot when it opens
+    // (openWithAncestors) — so this item only ever appears for those.
+    const cancelItem = { label:'Close and cancel', sc:'', danger:true, disabled:lockedOpen,
+      title:"Discards every change made since this was opened — walls, grids, elements, dims, and anything nested inside it",
+      act:()=>closeAndCancel(bx) };
     const closeItems = !bx.open
       ? [{ label:'Open', sc:'', disabled:lockedOpen || !canOpenBox(bx),
            title: canOpenBox(bx) ? '' : "Placed in a Unit Plan Editor file — can't be opened, only moved or deleted",
@@ -2606,6 +2616,7 @@
         : hasLiveInstances(bx.id)
           ? [ saveToMainItem, { label:'Close', sc:'', disabled:lockedOpen, act:()=>closeBoundary(bx) } ]
           : [{ label:'Close', sc:'', disabled:lockedOpen, act:()=>closeBoundary(bx) }];
+    if (bx.open && state.cancelSnapshots[bx.id]) closeItems.push(cancelItem);
     const items = [
       ...closeItems,
       { label: 'Copy', sc:'Ctrl+C', act:()=>copyBox(boxId) },
@@ -3277,6 +3288,14 @@
   // open at a time and nothing from a different file stays visible
   // underneath it.
   function openWithAncestors(bx){
+    // A nested Unit Plan/Layout (Product Editor's own flow) gets a snapshot
+    // the moment it opens, so "Close and Cancel" has something to revert to.
+    // Skipped if it's already open (re-opening something already active isn't
+    // a fresh "session" to snapshot) or top-level (nothing to cancel back to
+    // — a standalone file's own Library entry already holds its last save).
+    if (!bx.open && bx.parentId!=null && (bx.kind==='unitplan'||bx.kind==='layout')) {
+      state.cancelSnapshots[bx.id] = collectSubtreeFull(bx.id);
+    }
     let root = bx;
     while (root.parentId != null) { const p = findById(state.boxes, root.parentId); if (!p) break; root = p; }
     for (const p of state.boxes) if (p.parentId==null && p.id!==root.id) closeSubtree(p.id);
@@ -3287,7 +3306,31 @@
   }
   function closeBoundary(bx){
     bx.open = false;
+    delete state.cancelSnapshots[bx.id]; // this session is over either way
     refreshTray();
+  }
+  // Throw away every edit made inside `bx` since it was opened (walls, grids,
+  // elements, dims, its own authored shapes, and any nested boxes drawn/
+  // deleted/moved along the way — restoring the snapshot wholesale discards
+  // all of it), then close it. Note: if something inside was individually
+  // deleted (and so archived) during the session, that archived copy is not
+  // un-archived by a cancel here — a rare, harmless leftover in the Library,
+  // not a crash risk.
+  function closeAndCancel(bx){
+    const snap = state.cancelSnapshots[bx.id];
+    if (!snap) { closeBoundary(bx); return; }
+    const oldIds = subtreeIds(bx.id);
+    state.boxes = state.boxes.filter(b=>!oldIds.has(b.id)).concat(snap.boxes);
+    state.gridlines = state.gridlines.filter(g=>!oldIds.has(g.boxId)).concat(snap.grids);
+    state.walls = state.walls.filter(w=>!oldIds.has(w.containerId)).concat(snap.walls);
+    state.elements = state.elements.filter(el=>!oldIds.has(el.containerId)).concat(snap.elements);
+    state.dims = state.dims.filter(d=>!oldIds.has(d.containerId)).concat(snap.dims);
+    state.elementShapes = state.elementShapes.filter(sh=>!oldIds.has(sh.elementId)).concat(snap.shapes);
+    delete state.cancelSnapshots[bx.id];
+    state.selection = null; state.multiSelection = [];
+    refreshTray();
+    saveStateToStorage();
+    draw();
   }
   // A box "belongs to a lineage" once it's either an instance of some master
   // (masterId set) or is itself a master other live instances point back to
