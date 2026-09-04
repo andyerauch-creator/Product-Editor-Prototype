@@ -3113,7 +3113,11 @@
   // its branches, wired to the star badge (now a real button) rather than
   // hijacking the card's own click. Pass `onStarClick` only for a main-list
   // root card that actually has branches — that's what draws the star.
-  function buildInsertCard(kind, entry, onCardClick, onStarClick){
+  // `onDelete`, when given (only ever on a Versions-tray branch card — a
+  // debug/cleanup escape hatch, since a stray test branch otherwise needs a
+  // canvas Delete or a right-click to get rid of), draws a hover-reveal
+  // trash button in the same corner the Library's own delete action uses.
+  function buildInsertCard(kind, entry, onCardClick, onStarClick, onDelete){
     const { live, obj } = entry;
     const item=document.createElement('div');
     item.className='item'+(!live?' archived':'')+((state.inserting&&state.inserting.sourceId===obj.id)?' placing':'');
@@ -3130,6 +3134,14 @@
     const dims=document.createElement('div'); dims.className='dims'; dims.textContent=tileSizeLabel(entry);
     nm.appendChild(dims);
     item.appendChild(nm);
+    if (onDelete) {
+      const actions=document.createElement('div'); actions.className='actions';
+      const delBtn=document.createElement('button'); delBtn.type='button'; delBtn.className='danger';
+      delBtn.title='Delete this branch'; delBtn.innerHTML=ICON_SVG.trash;
+      delBtn.addEventListener('click', e=>{ e.stopPropagation(); onDelete(); });
+      actions.appendChild(delBtn);
+      item.appendChild(actions);
+    }
     item.addEventListener('click', onCardClick);
     if (live) drawLiveThumb(cv2, obj); else drawSnapshotThumb(cv2, obj.snapshot);
     return item;
@@ -3188,6 +3200,18 @@
   const insertBranchesTrayEl=document.getElementById('insertBranchesTray');
   const insertBranchesTitleTextEl=document.getElementById('insertBranchesTitleText');
   const insertBranchesListEl=document.getElementById('insertBranchesList');
+  // Debug/cleanup: erase a branch straight from its Versions-tray card — the
+  // same "gone, not archived" treatment deleteOne gives a branch deleted from
+  // the canvas (see deleteOne's box case), just reachable without having to
+  // go find it there first.
+  function deleteInsertBranch(entry){
+    if (entry.live) deleteOne({ kind:'box', id: entry.obj.id });
+    else state.archived = state.archived.filter(a=>a.id!==entry.obj.id);
+    if (state.insertBranchRootId===entry.obj.id) { state.insertBranchRootId=null; state.insertBranchRootKind=null; }
+    refreshTray(); // rebuilds the Library lists and, via it, the Insert list + Versions tray too
+    saveStateToStorage();
+    draw();
+  }
   function refreshInsertBranchesTray(){
     if (state.insertBranchRootId==null || insertPanelEl.hidden) { insertBranchesTrayEl.hidden=true; return; }
     const g = buildLibraryGroups(state.insertBranchRootKind).find(g=>g.root.obj.id===state.insertBranchRootId);
@@ -3195,7 +3219,7 @@
     insertBranchesTrayEl.hidden=false;
     insertBranchesTitleTextEl.textContent = 'Versions: ' + (g.root.obj.name || KIND_LABEL[state.insertBranchRootKind]);
     insertBranchesListEl.innerHTML='';
-    for (const br of g.branches) insertBranchesListEl.appendChild(buildInsertCard(state.insertBranchRootKind, br, ()=>startInsert(br.obj.id)));
+    for (const br of g.branches) insertBranchesListEl.appendChild(buildInsertCard(state.insertBranchRootKind, br, ()=>startInsert(br.obj.id), null, ()=>deleteInsertBranch(br)));
   }
   document.getElementById('closeInsertBranchesBtn').addEventListener('click', e=>{
     e.stopPropagation();
