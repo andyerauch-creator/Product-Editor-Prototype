@@ -377,13 +377,24 @@
     return Math.hypot(p.x-(a.x+t*dx), p.y-(a.y+t*dy));
   }
 
-  // A wall/element/grid only counts as hit/hoverable while it belongs to the
-  // currently active (deepest-open) container — a closed nested boundary's
-  // own contents stay untouchable until you actually open it. Boundary
-  // (box) edges are exempt: those you can always click to open/select.
+  // A wall/element/grid/dim only counts as hit/hoverable while it belongs to
+  // the currently active (deepest-open) container — a closed nested
+  // boundary's own contents stay untouchable until you actually open it.
   function belongsToActiveContainer(containerId){
     const ac = activeContainer();
     return containerId === (ac ? ac.id : null);
+  }
+  // A boundary itself is only selectable/hoverable/openable one level below
+  // what's currently active (Products always; a Unit Plan only once its
+  // Product is open; a Layout only once its Unit Plan is open — you can't
+  // reach into or even highlight a level you haven't opened your way into),
+  // or the active container itself (so you can still select/resize the
+  // thing you're currently working inside).
+  function boxInteractable(box){
+    if (box.kind==='product') return true;
+    const ac = activeContainer();
+    const activeId = ac ? ac.id : null;
+    return box.parentId === activeId || box.id === activeId;
   }
   function hitTest(wp) {
     const tol = 10 / ppfNow();
@@ -414,6 +425,7 @@
     // pick the smallest box edge under the cursor so children win over parents
     let bHit=null, bArea=Infinity;
     for (const bx of state.boxes) {
+      if (!boxInteractable(bx)) continue;
       const e = boxExt(bx);
       const onV = (Math.abs(wp.x-e.x1)<tol || Math.abs(wp.x-e.x2)<tol) && wp.y>e.y1-tol && wp.y<e.y2+tol;
       const onH = (Math.abs(wp.y-e.y1)<tol || Math.abs(wp.y-e.y2)<tol) && wp.x>e.x1-tol && wp.x<e.x2+tol;
@@ -514,6 +526,7 @@
     for (const b of state.boxes) {
       if (opts.openOnly && !b.open) continue;
       if (opts.exclude===b.id) continue;
+      if (opts.interactableOnly && !boxInteractable(b)) continue;
       const e = boxExt(b);
       if (p.x>=e.x1 && p.x<=e.x2 && p.y>=e.y1 && p.y<=e.y2) {
         const area = (e.x2-e.x1)*(e.y2-e.y1);
@@ -528,6 +541,7 @@
     const overlaps = (bx1,by1,bx2,by2) => bx2>=r.x1 && bx1<=r.x2 && by2>=r.y1 && by1<=r.y2;
     const items = [];
     for (const b of state.boxes) {
+      if (!boxInteractable(b)) continue;
       const e = boxExt(b);
       if (overlaps(e.x1,e.y1,e.x2,e.y2)) items.push({kind:'box', id:b.id});
     }
@@ -666,6 +680,7 @@
   function boxCornerUnder(sp) {
     let best=null, bestArea=Infinity;
     for (const b of state.boxes) {
+      if (!boxInteractable(b)) continue;
       const corner = boxCornerAt(b, sp);
       if (corner) {
         const e=boxExt(b), area=(e.x2-e.x1)*(e.y2-e.y1);
@@ -1225,7 +1240,7 @@
     const cands=[];
     for (const el of state.elements) if (belongsToActiveContainer(el.containerId) && pointInElement(wp,el)) cands.push({kind:'element', id:el.id, z:3});
     const zk={layout:0,unitplan:1,product:2};
-    for (const b of state.boxes) if (boxEdgeUnder(b,wp,tol)) cands.push({kind:'box', id:b.id, z:(zk[b.kind]??2)});
+    for (const b of state.boxes) if (boxInteractable(b) && boxEdgeUnder(b,wp,tol)) cands.push({kind:'box', id:b.id, z:(zk[b.kind]??2)});
     // grid lines cycle last (after all containers) — but a wall under the cursor
     // keeps priority, so walls drawn along a grid stay selectable
     const wallUnder = state.walls.some(wl => belongsToActiveContainer(wl.containerId) && distToSeg(wp, endPos(wl.a), endPos(wl.b)) < Math.max(tol,(wl.thickness||0.5)/2));
@@ -1257,7 +1272,7 @@
     const sp = getScreen(e);
     hideBoxMenu();
     // Right-click over an element or box → let the context menu handle it (don't pan)
-    if (e.button === 2 && (hitTest(s2w(sp))?.kind==='element' || boxContaining(s2w(sp)))) return;
+    if (e.button === 2 && (hitTest(s2w(sp))?.kind==='element' || boxContaining(s2w(sp), {interactableOnly:true}))) return;
     // Pan: middle mouse or space-drag or right button
     if (e.button === 1 || e.button === 2 || (e.button===0 && spaceDown)) {
       panning = { sx: sp.x, sy: sp.y, vx: state.view.x, vy: state.view.y };
@@ -1306,7 +1321,7 @@
         }
         // nothing on an edge/handle → select the innermost box under the cursor
         // (lets you click anywhere inside a layout to select it)
-        if (!hit) { const cb = boxContaining(wp); if (cb) hit = { kind:'box', id:cb.id }; }
+        if (!hit) { const cb = boxContaining(wp, {interactableOnly:true}); if (cb) hit = { kind:'box', id:cb.id }; }
       }
       state.selection = hit;
       // an open container can't be dragged out from under the work happening
@@ -2051,7 +2066,7 @@
       showElementMenu(sp.x, sp.y, elHit.id);
       return;
     }
-    const bx=boxContaining(wp);
+    const bx=boxContaining(wp, {interactableOnly:true});
     if (bx){
       state.selection={kind:'box',id:bx.id}; draw();
       showBoxMenu(sp.x, sp.y, bx.id);
