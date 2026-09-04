@@ -1384,9 +1384,10 @@
     const visible = visibleBoxIds();
     for (const g of state.gridlines) {
       if (!visible.has(g.boxId)) continue;
+      const gbx = g.boxId!=null ? findById(state.boxes, g.boxId) : null;
+      if (gbx && !state.showDims[gbx.kind]) continue; // same Dims: toggle a container's grids ride along with its dims
       const sel = (state.selection && state.selection.kind==='grid' && state.selection.id===g.id) || multiIds.has(g.id);
       const hov = g.id===hoverGridId;
-      const gbx = g.boxId!=null ? findById(state.boxes, g.boxId) : null;
       const base = gbx ? boundaryColor(gbx) : '#8a94a3'; // match the container's color
       ctx.strokeStyle = hov ? '#ffd54a' : (sel ? '#fdba8c' : base);
       ctx.lineWidth = hov ? 2.5 : (sel ? 2 : 1.3);
