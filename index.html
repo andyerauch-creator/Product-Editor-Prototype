@@ -8,24 +8,37 @@
 <meta http-equiv="Expires" content="0">
 <title>Product Editor</title>
 <style>
+  /* Palette + component shapes transcribed from Cedar Studio's own light
+     workbench skin (apps/editor/app/globals.css, the .studio[data-wb-theme=
+     "light"] block) so this prototype's chrome matches the real app rather
+     than approximating a screenshot. */
   :root {
-    --bg: #1e2128;
-    --panel: #262a33;
-    --panel-2: #2e333d;
-    --ink: #e6e9ef;
-    --muted: #9aa3b2;
-    --accent: #4c9aff;
-    --accent-2: #2f6fd6;
-    --grid-line: #5b86c4;
-    --wall: #d7dce5;
-    --dim: #ffb454;
-    --border: #3a4150;
+    --gutter: #f1f5f9;      /* app-bg: outermost slate-100 backdrop        */
+    --bg: #ffffff;          /* canvas + thumbnail ground (wb-canvas)       */
+    --panel: #ffffff;       /* panels + rail (wb-panel)                    */
+    --panel-2: #f8fafc;     /* inset control / idle tool face (wb-control) */
+    --raised: #e2e8f0;      /* hover fill / highlighted row (wb-hover)     */
+    --tile-track: #f1f5f9;  /* floating action chip over a thumbnail      */
+    --ink: #1e293b;         /* slate-800 primary text (wb-label)          */
+    --muted: #64748b;       /* slate-500 secondary text (wb-label-muted)  */
+    --accent: #ea580c;      /* orange-600 (wb-accent) — active + selection */
+    --accent-2: #c2410c;    /* pressed/hover shade of the accent           */
+    --on-accent: #ffffff;   /* text/icon color drawn on the accent fill    */
+    --ok: #15803d; --ok-soft: rgba(34,197,94,.14);
+    --pending: #b45309; --pending-soft: rgba(245,158,11,.16);
+    --danger: #dc2626; --danger-soft: #fef2f2;
+    --grid-line: #bcbcbc;   /* authored Grid Line tool (wb-grid)          */
+    --wall: #555555;        /* wall geometry ink (wb-ink)                  */
+    --ref-line: #8c8c8c;    /* reference/dimension ink (wb-ink-2)          */
+    --border: #e2e8f0;      /* slate-200 hairline (wb-panel-edge)          */
+    --menu-edge: #cbd5e1;
+    --menu-shadow: 0 12px 28px rgba(15,23,42,.14);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
   body {
     font-family: "Segoe UI", system-ui, sans-serif;
-    background: var(--bg);
+    background: var(--gutter);
     color: var(--ink);
     overflow: hidden;
     user-select: none;
@@ -38,75 +51,90 @@
     background: var(--panel);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
+    position: relative;
   }
-  header h1 { font-size: 14px; font-weight: 600; letter-spacing: .3px; }
-  header h1 span { color: var(--muted); font-weight: 400; }
-  #editorModeSelect {
-    font: inherit; font-size: 14px; font-weight: 600; letter-spacing: .3px;
-    background: var(--panel); color: var(--ink); border: 1px solid transparent;
-    border-radius: 6px; padding: 3px 4px; cursor: pointer; appearance: auto;
+  /* Custom mode switcher (replaces a bare <select>) so each mode can carry
+     its own Cedar Studio nav mark — circle/plated-room/split-plate/doors —
+     the same glyphs the real app's rail uses for Element/Layout/Unit Plan/
+     Product, per the icon key the user gave for the reference screenshot. */
+  #modeBtn {
+    display: flex; align-items: center; gap: 8px;
+    font: inherit; font-size: 14px; font-weight: 600; letter-spacing: .1px;
+    background: none; color: var(--ink); border: 1px solid transparent;
+    border-radius: 7px; padding: 5px 8px 5px 6px; cursor: pointer;
   }
-  #editorModeSelect:hover, #editorModeSelect:focus { border-color: var(--border); background: var(--panel-2); }
+  #modeBtn:hover, #modeBtn.open { background: var(--raised); }
+  #modeBtn .mark { display:flex; color: var(--accent); flex-shrink: 0; }
+  #modeBtn .mark svg, #modeMenu .opt .mark svg { width: 15px; height: 15px; display: block; }
+  #modeBtn .caret { color: var(--muted); display:flex; }
+  #modeMenu {
+    position: absolute; top: calc(100% + 6px); left: 14px; z-index: 60;
+    min-width: 190px; background: var(--panel); border: 1px solid var(--menu-edge);
+    border-radius: 10px; padding: 5px; box-shadow: var(--menu-shadow);
+  }
+  #modeMenu[hidden] { display: none; }
+  #modeMenu .opt {
+    display: flex; align-items: center; gap: 10px; padding: 7px 9px;
+    border-radius: 7px; font-size: 13px; cursor: pointer; color: var(--ink);
+  }
+  #modeMenu .opt .mark { display:flex; color: var(--muted); flex-shrink:0; }
+  #modeMenu .opt:hover { background: var(--raised); }
+  #modeMenu .opt.current { background: var(--panel-2); font-weight: 600; }
+  #modeMenu .opt.current .mark { color: var(--accent); }
 
   #toolbar {
-    display: flex; flex-direction: column; gap: 6px; align-items: stretch;
-    width: 92px; flex-shrink: 0; padding: 10px 8px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 2px; align-items: center;
+    width: 56px; flex-shrink: 0; padding: 10px 0; overflow-x: hidden; overflow-y: auto;
     background: var(--panel); border-right: 1px solid var(--border);
   }
+  /* Two tool shapes, matching the real rail: a nav button (Library/Insert/
+     Push) is an icon chip with a tiny caption underneath; a drafting tool is
+     an icon-only square with a native tooltip (the `title` attribute already
+     on every .tool). */
   .tool {
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    color: var(--ink);
-    border-radius: 8px;
-    padding: 7px 11px;
-    cursor: pointer;
-    font-size: 11px;
-    transition: .12s;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    background: none; border: none; color: var(--ink);
+    cursor: pointer; transition: .12s; flex-shrink: 0;
   }
-  .tool:hover { background: #383e4a; }
-  .tool.active { background: var(--accent-2); border-color: var(--accent); color: #fff; }
-  .tool.disabled { opacity: .3; pointer-events: none; }
-  .tool svg { width: 18px; height: 18px; }
+  .tool .ic {
+    display: flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 7px; color: var(--ink);
+  }
+  .tool.navbtn .ic { width: 30px; height: 30px; border-radius: 8px; }
+  .tool .lbl { font-size: 9px; letter-spacing: .01em; color: var(--muted); white-space: nowrap; }
+  .tool:not(.navbtn) .lbl { display: none; }
+  .tool:hover .ic { background: var(--raised); }
+  .tool.active .ic { background: var(--accent); color: var(--on-accent); }
+  .tool.active .lbl { color: var(--ink); }
+  .tool.disabled { opacity: .35; pointer-events: none; }
+  .tool svg { width: 17px; height: 17px; }
+  .tool.navbtn svg { width: 16px; height: 16px; }
   .sep { width: 1px; height: 34px; background: var(--border); margin: 0 4px; }
+  #toolbar .raildiv { width: 26px; height: 1px; background: var(--border); flex-shrink: 0; margin: 5px 0; }
 
   #toolbar .group {
-    display: flex; flex-direction: column; gap: 6px;
-    border: none; margin: 0; padding: 0; margin-top: 4px;
+    display: contents;
   }
-  #toolbar .group summary {
-    list-style: none; cursor: pointer; user-select: none;
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: 10px; letter-spacing: .3px; text-transform: uppercase; color: var(--muted);
-    padding: 6px 2px 4px; border-top: 1px solid var(--border);
-  }
-  #toolbar .group summary::-webkit-details-marker { display: none; }
-  #toolbar .group summary::after { content: '▸'; font-size: 9px; transition: transform .15s; }
-  #toolbar .group[open] summary::after { transform: rotate(90deg); }
   /* Element's sub-tools (Toilet/Table/Bed/Car) sit right under its own
      toggle button, inline within the Boundaries group — not a dropdown. */
-  #elementSubTools { display: flex; flex-direction: column; gap: 6px; padding-left: 6px; }
+  #elementSubTools { display: contents; }
   #elementSubTools[hidden] { display: none; }
   #toggleInsertBtn[hidden] { display: none; }
+  #pushBranchesBtn[hidden] { display: none; }
   #toolbar .group.disabled { opacity: .35; pointer-events: none; }
 
   .field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
   .field input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); }
 
-  #stage { position: relative; flex: 1; overflow: hidden; cursor: crosshair; }
+  #stage { position: relative; flex: 1; overflow: hidden; cursor: crosshair; background: var(--bg); }
   #stage canvas { display: block; position: absolute; inset: 0; }
 
   #hud {
     position: absolute; bottom: 10px; left: 12px;
-    background: rgba(20,23,28,.82); border: 1px solid var(--border);
+    background: var(--panel); border: 1px solid var(--border);
     padding: 6px 10px; border-radius: 8px; font-size: 12px; color: var(--muted);
     pointer-events: none; font-variant-numeric: tabular-nums;
-  }
-  #tip {
-    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-    background: rgba(20,23,28,.82); border: 1px solid var(--border);
-    padding: 6px 14px; border-radius: 20px; font-size: 12px; color: var(--ink);
-    pointer-events: none;
+    box-shadow: var(--menu-shadow);
   }
   kbd {
     background: var(--panel-2); border: 1px solid var(--border); border-bottom-width: 2px;
@@ -114,78 +142,106 @@
   }
   #menu {
     position: absolute; z-index: 50; min-width: 150px;
-    background: var(--panel); border: 1px solid var(--border);
+    background: var(--panel); border: 1px solid var(--menu-edge);
     border-radius: 8px; padding: 5px; display: none;
-    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    box-shadow: var(--menu-shadow);
   }
   #menu .item {
     padding: 7px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
     display: flex; justify-content: space-between; gap: 18px; align-items: center;
   }
-  #menu .item:hover { background: var(--accent-2); color: #fff; }
-  #menu .item.danger:hover { background: #c0392b; }
+  #menu .item:hover { background: var(--accent); color: var(--on-accent); }
+  #menu .item.danger:hover { background: var(--danger); color: #fff; }
   #menu .item .sc { color: var(--muted); font-size: 11px; }
-  #menu .item:hover .sc { color: #dbe6ff; }
+  #menu .item:hover .sc { color: rgba(255,255,255,.8); }
   #menu .divider { height: 1px; background: var(--border); margin: 4px 2px; }
 
   #flexPanel {
     position: absolute; top: 12px; right: 12px; z-index: 40; width: 240px;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-    padding: 12px; display: none; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    background: var(--panel); border: 1px solid var(--menu-edge); border-radius: 10px;
+    padding: 12px; display: none; box-shadow: var(--menu-shadow);
   }
-  #flexPanel h3 { font-size: 12px; font-weight: 600; margin-bottom: 2px; color:#6db3ff; }
+  #flexPanel h3 { font-size: 12px; font-weight: 600; margin-bottom: 2px; color: var(--accent); }
   #flexPanel .sub { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
   #flexPanel .seg { margin-bottom: 9px; }
   #flexPanel .seg .lbl { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 3px; }
   #flexPanel .seg .lbl .len { color: var(--muted); }
-  #flexPanel .seg .lbl .pct { color: #6db3ff; font-variant-numeric: tabular-nums; }
-  #flexPanel input[type=range] { width: 100%; accent-color: #6db3ff; }
+  #flexPanel .seg .lbl .pct { color: var(--accent); font-variant-numeric: tabular-nums; }
+  #flexPanel input[type=range] { width: 100%; accent-color: var(--accent); }
   #flexPanel .foot { font-size: 10px; color: var(--muted); margin-top: 6px; }
 
   #main { display: flex; flex: 1; min-height: 0; }
   .panel {
-    width: 212px; flex-shrink: 0;
+    width: 232px; flex-shrink: 0;
     background: var(--panel); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; overflow-y: auto;
   }
   .panel[hidden] { display: none; }
-  .panel h3 { font-size: 12px; font-weight: 600; padding: 12px 12px 8px; color: var(--ink); border-bottom: 1px solid var(--border); margin-bottom: 6px; }
-  .panel .list { padding: 0 10px 10px; }
+  .panel h3 { font-size: 13px; font-weight: 600; padding: 14px 14px 10px; color: var(--ink); border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+  /* Two tiles per row, matching the real Library/Insert palettes. */
+  .panel .list { padding: 0 12px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px; align-content: start; }
+  .panel .list[hidden] { display: none; }
   .panel .item {
-    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 9px;
-    background: var(--panel-2); cursor: pointer; overflow: hidden; position: relative;
+    border-radius: 8px; cursor: pointer; overflow: visible; position: relative;
+    display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; text-align: center;
   }
-  .panel .item:hover { border-color: var(--accent); }
-  .panel .item.open { border-color: #ff5c5c; }
+  .panel .item:hover { background: var(--raised); }
+  .panel .item canvas {
+    display: block; width: 100%; aspect-ratio: 1 / 1; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .panel .item.open canvas { border-color: var(--danger); border-width: 2px; }
   .panel .item.archived canvas { opacity: .55; }
-  .panel .item.archived .nm .suffix { color: #ff8a8a; }
-  .panel .item.placing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .panel .item canvas { display: block; width: 100%; aspect-ratio: 1 / 1; background: var(--bg); border-bottom: 1px solid var(--border); }
-  .panel .item .nm { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 6px 8px; color: var(--ink); }
-  .panel .item .nm .suffix { color: var(--muted); flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .panel .item .nm .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .panel .item.archived .nm .suffix { color: var(--danger); }
+  .panel .item.placing canvas { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .panel .item .nm { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; font-size: 12px; color: var(--ink); }
+  .panel .item .nm .suffix { color: var(--muted); font-size: 11px; }
+  .panel .item .nm .label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .panel .item .nm input[type=text] {
-    flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border);
-    color: var(--ink); border-radius: 6px; padding: 6px 7px; font-size: 12px;
+    width: 100%; min-width: 0; background: none; border: 1px solid transparent;
+    color: var(--ink); border-radius: 5px; padding: 2px 4px; font-size: 12.5px; text-align: center;
   }
-  .panel .item .actions { display: flex; gap: 6px; padding: 0 8px 8px; border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
+  .panel .item .nm input[type=text]:hover, .panel .item .nm input[type=text]:focus {
+    background: var(--panel-2); border-color: var(--border);
+  }
+  .panel .item .dims { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+  /* Hover-only action chip floating over the thumbnail's corner, not a
+     permanent row — matches the real Library tile's per-file toolbar. */
+  .panel .item .actions {
+    position: absolute; top: 6px; right: 6px; display: flex; gap: 2px;
+    background: var(--tile-track); border: 1px solid var(--menu-edge); border-radius: 6px;
+    padding: 2px; opacity: 0; pointer-events: none; transition: opacity .1s;
+  }
+  .panel .item:hover .actions, .panel .item .actions:focus-within { opacity: 1; pointer-events: auto; }
   .panel .item .actions button {
-    flex: 1; background: var(--panel); border: 1px solid var(--border); color: var(--ink);
-    border-radius: 6px; padding: 5px 0; font-size: 10.5px; cursor: pointer;
+    background: none; border: none; color: var(--muted);
+    border-radius: 5px; width: 22px; height: 22px; font-size: 10px; cursor: pointer;
   }
-  /* An original with branches, once clicked, stays blue so it's clear which
-     one the Branches tray to the right is currently showing. */
-  .panel .item.lib-selected { border-color: #4c9aff; box-shadow: 0 0 0 1px #4c9aff; }
+  /* Pushed branches waiting for review in the Unit Plan/Layout Editor —
+     amber to read as "pending," and a plain uppercase label naming
+     the Product each group came from. */
+  .panel .item.pushed canvas { border-color: var(--pending); }
+  .panel .item.pushed .actions button.approve { color: var(--ok); }
+  .panel .item.pushed .actions button.approve:hover { background: var(--ok-soft); }
+  .panel .pushed-group-header {
+    grid-column: 1 / -1;
+    font-size: 10px; letter-spacing: .4px; text-transform: uppercase; color: var(--muted);
+    margin: 4px 2px 0; padding-top: 8px; border-top: 1px solid var(--border);
+  }
+  /* An original with branches, once clicked, stays highlighted so it's
+     clear which one the Branches tray to the right is currently showing. */
+  .panel .item.lib-selected canvas { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   /* Marks a root's preview as having branches — the only rows that can open
      the Branches/Versions tray. */
   .panel .item .branch-star {
-    position: absolute; top: 5px; right: 6px; color: #ffd54a; font-size: 13px;
-    text-shadow: 0 1px 2px rgba(0,0,0,.7); pointer-events: none;
+    position: absolute; top: 5px; left: 6px; color: var(--pending); font-size: 13px;
+    text-shadow: 0 1px 2px rgba(255,255,255,.7); pointer-events: none;
   }
   /* The only way to create a Product — sits above the Product list. */
   .panel .item.add-new {
-    display: flex; align-items: center; justify-content: center; height: 40px;
-    border-style: dashed; color: var(--muted); font-size: 20px; font-weight: 600; line-height: 1;
+    grid-column: 1 / -1;
+    display: flex; align-items: center; justify-content: center; height: 36px;
+    border: 1px dashed var(--border); color: var(--muted); font-size: 18px; font-weight: 600; line-height: 1;
   }
   .panel .item.add-new:hover { border-color: var(--accent); color: var(--ink); background: var(--panel-2); }
   .panel h3 { display: flex; align-items: center; justify-content: space-between; }
@@ -194,23 +250,28 @@
     cursor: pointer; padding: 0 2px;
   }
   .panel h3 .close-tray-btn:hover { color: var(--ink); }
-  .panel .empty-note { color: var(--muted); font-size: 11.5px; padding: 4px 2px 10px; }
-  .panel .item .actions button:hover { background: #383e4a; }
-  .panel .item .actions button.save { border-color: var(--accent); color: #9ec5ff; }
-  .panel .item .actions button.danger { color: #ff8a8a; }
-  .panel .item .actions button.danger:hover { background: #c0392b; color: #fff; }
-  .panel .item .actions button:disabled { opacity: .6; cursor: default; }
+  .panel .empty-note { grid-column: 1 / -1; color: var(--muted); font-size: 11.5px; padding: 4px 2px 10px; }
+  .panel .item .actions button:hover { background: var(--raised); color: var(--ink); }
+  .panel .item .actions button.save:hover { color: var(--accent); }
+  .panel .item .actions button.danger { color: var(--danger); }
+  .panel .item .actions button.danger:hover { background: var(--danger-soft); color: var(--danger); }
+  .panel .item .actions button:disabled { opacity: .4; cursor: default; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <select id="editorModeSelect" title="Switch which kind of file you're editing">
-      <option value="product">Product Editor</option>
-      <option value="unitplan">Unit Plan Editor</option>
-      <option value="layout">Layout Editor</option>
-      <option value="element">Element Editor</option>
-    </select>
+    <button type="button" id="modeBtn" title="Switch which kind of file you're editing">
+      <span class="mark" id="modeBtnMark"></span>
+      <span id="modeBtnLabel">Product Editor</span>
+      <span class="caret"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 6.2L8 10l4-3.8"/></svg></span>
+    </button>
+    <div id="modeMenu" hidden>
+      <div class="opt" data-mode="product"><span class="mark"></span>Product Editor</div>
+      <div class="opt" data-mode="unitplan"><span class="mark"></span>Unit Plan Editor</div>
+      <div class="opt" data-mode="layout"><span class="mark"></span>Layout Editor</div>
+      <div class="opt" data-mode="element"><span class="mark"></span>Element Editor</div>
+    </div>
     <div class="sep"></div>
     <span class="field" title="Show/hide dimensions by the container they were drawn in">Dims:</span>
     <label class="field" style="color:#3b82f6"><input id="showProductDims" type="checkbox" checked> Product</label>
@@ -220,61 +281,69 @@
 
   <div id="main">
     <div id="toolbar">
-      <div class="tool active" id="toggleLibraryBtn" title="Show/hide the Library panel">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="4" rx="1"/><rect x="4" y="10" width="16" height="4" rx="1"/><rect x="4" y="16" width="16" height="4" rx="1"/></svg>
-        Library
+      <div class="tool navbtn active" id="toggleLibraryBtn" title="Show/hide the Library panel">
+        <span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.2" y="2.2" width="4.8" height="4.8" rx="1.2"/><rect x="9" y="2.2" width="4.8" height="4.8" rx="1.2"/><rect x="2.2" y="9" width="4.8" height="4.8" rx="1.2"/><rect x="9" y="9" width="4.8" height="4.8" rx="1.2"/></svg></span>
+        <span class="lbl">Library</span>
       </div>
-      <div class="tool" id="toggleInsertBtn" title="Show/hide the Insert panel">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 9v6M9 12h6"/></svg>
-        Insert
+      <div class="tool navbtn" id="toggleInsertBtn" title="Show/hide the Insert panel">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 9v6M9 12h6"/></svg></span>
+        <span class="lbl">Insert</span>
       </div>
-      <div class="sep" style="width:auto;height:1px;margin:2px 0;"></div>
+      <div class="tool navbtn" id="pushBranchesBtn" title="Push this Product's branched Unit Plans/Layouts to the Unit Plan/Layout Editor libraries for review">
+        <span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 12.4V5.2M5.2 8L8 5.2 10.8 8"/><path d="M2.8 2.6h10.4"/></svg></span>
+        <span class="lbl">Push</span>
+      </div>
+      <div class="raildiv"></div>
       <div class="tool active" data-tool="select" title="Select / move (V)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3l6 16 2-6 6-2z"/></svg>
-        Select
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3l6 16 2-6 6-2z"/></svg></span>
+        <span class="lbl">Select</span>
       </div>
       <div id="boundaryToolset">
         <div class="tool" data-tool="grid" title="Draw grid line (G)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h18M3 16h18M8 3v18M16 3v18"/></svg>
-          Grid line
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h18M3 16h18M8 3v18M16 3v18"/></svg></span>
+          <span class="lbl">Grid line</span>
         </div>
         <div class="tool" data-tool="dim" title="Dimension (D)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18M3 9v6M21 9v6"/></svg>
-          Dimension
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18M3 9v6M21 9v6"/></svg></span>
+          <span class="lbl">Dimension</span>
         </div>
         <div class="tool" data-tool="lockdim" title="Lock dimension (L) — forces the tagged element to keep this distance">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17h18M3 15v4M21 15v4"/><rect x="9" y="4" width="6" height="5" rx="1"/><path d="M10.5 4V3a1.5 1.5 0 0 1 3 0v1"/></svg>
-          Lock Dim
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17h18M3 15v4M21 15v4"/><rect x="9" y="4" width="6" height="5" rx="1"/><path d="M10.5 4V3a1.5 1.5 0 0 1 3 0v1"/></svg></span>
+          <span class="lbl">Lock Dim</span>
         </div>
         <div class="tool" data-tool="eqdim" title="EQ dimension (E) — forces tagged grids to equal spacing">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h18M3 12v4M21 12v4M9 12v4M15 12v4"/><path d="M6 6h5M6 9h5"/></svg>
-          EQ Dim
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h18M3 12v4M21 12v4M9 12v4M15 12v4"/><path d="M6 6h5M6 9h5"/></svg></span>
+          <span class="lbl">EQ Dim</span>
         </div>
         <div class="tool" data-tool="flexdim" title="Flex dimension (F) — distribute size change across segments by %">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h18M3 12v4M21 12v4M8 12v4M14 12v4"/><path d="M4 6l4 3-4 0z" fill="currentColor"/><path d="M16 6h5"/></svg>
-          Flex Dim
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h18M3 12v4M21 12v4M8 12v4M14 12v4"/><path d="M4 6l4 3-4 0z" fill="currentColor"/><path d="M16 6h5"/></svg></span>
+          <span class="lbl">Flex Dim</span>
         </div>
         <div class="tool" data-tool="wall6" title="Draw 6&quot; wall">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="10" width="18" height="4" rx="1"/></svg>
-          6&quot; Wall
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="10" width="18" height="4" rx="1"/></svg></span>
+          <span class="lbl">6&quot; Wall</span>
         </div>
         <div class="tool" data-tool="wall12" title="Draw 12&quot; wall">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="8" width="18" height="8" rx="1"/></svg>
-          12&quot; Wall
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="8" width="18" height="8" rx="1"/></svg></span>
+          <span class="lbl">12&quot; Wall</span>
         </div>
       </div>
       <div id="elementEditorToolset" hidden>
+        <div class="tool" data-tool="dim" title="Reference dimension (D) — measure the shapes you're authoring; informational only">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18M3 9v6M21 9v6"/></svg></span>
+          <span class="lbl">Dimension</span>
+        </div>
         <div class="tool" data-tool="shape:rect" title="Rounded rectangle — grey filled shape">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="6" width="16" height="12" rx="3" fill="currentColor" stroke="none"/></svg>
-          Rounded Rect
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="6" width="16" height="12" rx="3" fill="currentColor" stroke="none"/></svg></span>
+          <span class="lbl">Rounded Rect</span>
         </div>
         <div class="tool" data-tool="shape:line" title="Line">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20L20 4"/></svg>
-          Line
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20L20 4"/></svg></span>
+          <span class="lbl">Line</span>
         </div>
         <div class="tool" data-tool="shape:point" title="Insertion point — exactly one per element, marks where it anchors when placed">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/></svg>
-          Insertion Pt
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/></svg></span>
+          <span class="lbl">Insertion Pt</span>
         </div>
       </div>
     </div>
@@ -338,7 +407,7 @@
     elementShapes: [], // {id, elementId, kind:'rect'|'line', x1,y1,x2,y2} — the grey
                   // rounded-rects and lines an Element (drawn in the Element Editor)
                   // is made of. elementId is the top-level 'element' box that owns it.
-    showDims: { product:true, unitplan:true, layout:true }, // dim visibility per container kind
+    showDims: { product:true, unitplan:true, layout:true, element:true }, // dim visibility per container kind
     selection: null, // {kind, id}
     inserting: null, // {sourceId, picks:[{axis,ref,coord}]} while picking 4 grids to insert a copy
     multiSelection: [], // [{kind,id}, ...] from a click-drag marquee select
@@ -645,6 +714,11 @@
     try {
       if (ref.type==='grid') { const g=findById(state.gridlines, ref.id); return g ? gridPos(g) : null; }
       if (ref.type==='edge') { const b=findById(state.boxes, ref.boxId); return b ? boxExt(b)[ref.edge] : null; }
+      // Element Editor reference dimensions: a corner of one of its own
+      // authored rects/lines, or its insertion point — there are no
+      // grids/box-edges to measure off of in there.
+      if (ref.type==='shapeEdge') { const sh=findById(state.elementShapes, ref.shapeId); return sh ? sh[ref.edge] : null; }
+      if (ref.type==='insertionPoint') { const b=findById(state.boxes, ref.elementId); return (b && b.insertionPoint) ? b.insertionPoint[ref.axis] : null; }
       return null;
     } finally { resolveDepth--; }
   }
@@ -663,26 +737,55 @@
     const ac = activeContainer();
     return ac ? [ac] : state.boxes.filter(b=>b.kind==='product');
   }
+  // Element Editor has no grids/walls to dimension off of, so its own
+  // authored rects/lines (and the insertion point) stand in as the
+  // reference features — purely informational ("how big is this thing"),
+  // same rendering as any other dimension, just picked from shape corners
+  // instead of grids/box edges.
+  function elementShapeVFeatures(elId){
+    const out=[];
+    for (const sh of state.elementShapes) if (sh.elementId===elId) {
+      out.push({coord:sh.x1, ref:{type:'shapeEdge',shapeId:sh.id,edge:'x1'}});
+      out.push({coord:sh.x2, ref:{type:'shapeEdge',shapeId:sh.id,edge:'x2'}});
+    }
+    const box = findById(state.boxes, elId);
+    if (box && box.insertionPoint) out.push({coord:box.insertionPoint.x, ref:{type:'insertionPoint',elementId:elId,axis:'x'}});
+    return out;
+  }
+  function elementShapeHFeatures(elId){
+    const out=[];
+    for (const sh of state.elementShapes) if (sh.elementId===elId) {
+      out.push({coord:sh.y1, ref:{type:'shapeEdge',shapeId:sh.id,edge:'y1'}});
+      out.push({coord:sh.y2, ref:{type:'shapeEdge',shapeId:sh.id,edge:'y2'}});
+    }
+    const box = findById(state.boxes, elId);
+    if (box && box.insertionPoint) out.push({coord:box.insertionPoint.y, ref:{type:'insertionPoint',elementId:elId,axis:'y'}});
+    return out;
+  }
   // Vertical features (give an x): vertical grid lines + box left/right edges.
   function vFeatures() {
     const out=[];
-    const activeId = activeContainer() ? activeContainer().id : null;
+    const ac = activeContainer();
+    const activeId = ac ? ac.id : null;
     for (const g of state.gridlines) if (g.type==='v' && g.boxId===activeId) out.push({coord:gridPos(g), ref:{type:'grid',id:g.id}});
     for (const b of ownFeatureBoxes()) { const e=boxExt(b);
       out.push({coord:e.x1, ref:{type:'edge',boxId:b.id,edge:'x1'}});
       out.push({coord:e.x2, ref:{type:'edge',boxId:b.id,edge:'x2'}});
     }
+    if (ac && ac.kind==='element') out.push(...elementShapeVFeatures(ac.id));
     return out;
   }
   // Horizontal features (give a y): horizontal grid lines + box top/bottom edges.
   function hFeatures() {
     const out=[];
-    const activeId = activeContainer() ? activeContainer().id : null;
+    const ac = activeContainer();
+    const activeId = ac ? ac.id : null;
     for (const g of state.gridlines) if (g.type==='h' && g.boxId===activeId) out.push({coord:gridPos(g), ref:{type:'grid',id:g.id}});
     for (const b of ownFeatureBoxes()) { const e=boxExt(b);
       out.push({coord:e.y1, ref:{type:'edge',boxId:b.id,edge:'y1'}});
       out.push({coord:e.y2, ref:{type:'edge',boxId:b.id,edge:'y2'}});
     }
+    if (ac && ac.kind==='element') out.push(...elementShapeHFeatures(ac.id));
     return out;
   }
   // Nearest intersection of a vertical & horizontal feature to a world point.
@@ -741,8 +844,13 @@
     cands.sort((a,b)=>a.d-b.d);
     return (cands[0] && cands[0].d < tol) ? cands[0] : null;
   }
-  const sameRef = (a,b) => a && b && a.type===b.type &&
-    (a.type==='grid' ? a.id===b.id : (a.boxId===b.boxId && a.edge===b.edge));
+  const sameRef = (a,b) => {
+    if (!a || !b || a.type!==b.type) return false;
+    if (a.type==='grid') return a.id===b.id;
+    if (a.type==='shapeEdge') return a.shapeId===b.shapeId && a.edge===b.edge;
+    if (a.type==='insertionPoint') return a.elementId===b.elementId && a.axis===b.axis;
+    return a.boxId===b.boxId && a.edge===b.edge;
+  };
 
   // ---- Bounding box helpers -------------------------------------------------
   function boxCornerAt(bx, sp) {
@@ -885,13 +993,13 @@
     for (let xf = startX; xf <= br.x; xf += gs) {
       const sx = w2s({ x: xf, y: 0 }).x;
       const major = Math.abs(xf % (gs*5)) < 1e-6;
-      ctx.strokeStyle = major ? 'rgba(120,135,160,.30)' : 'rgba(120,135,160,.13)';
+      ctx.strokeStyle = major ? 'rgba(15,23,42,.08)' : 'rgba(15,23,42,.045)';
       ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
     }
     for (let yf = startY; yf <= br.y; yf += gs) {
       const sy = w2s({ x: 0, y: yf }).y;
       const major = Math.abs(yf % (gs*5)) < 1e-6;
-      ctx.strokeStyle = major ? 'rgba(120,135,160,.30)' : 'rgba(120,135,160,.13)';
+      ctx.strokeStyle = major ? 'rgba(15,23,42,.08)' : 'rgba(15,23,42,.045)';
       ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
     }
     // origin marker
@@ -910,8 +1018,8 @@
     const sib = state.boxes.filter(b=>b.kind===bx.kind).sort((a,b)=>a.id-b.id);
     const i = Math.max(0, sib.findIndex(b=>b.id===bx.id));
     const h = hue + ((i*31)%30) - 15;     // ±15° hue spread
-    const l = 48 + ((i*19)%34);           // 48–82% lightness
-    return `hsl(${h}, 68%, ${l}%)`;
+    const l = 34 + ((i*19)%28);           // 34–62% lightness — legible on a white canvas
+    return `hsl(${h}, 62%, ${l}%)`;
   }
   // Draw boundary frames (no fill). Only the active (deepest-open) container is
   // red; the selected/hovered box draws frontmost — on top of even the red frame.
@@ -932,7 +1040,7 @@
       const p1 = w2s({x:e.x1,y:e.y1}), p2 = w2s({x:e.x2,y:e.y2});
       const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y);
       const ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
-      const col = hov ? '#ffd54a' : (sel ? '#4c9aff' : (bx.id===activeId ? '#ff5c5c' : boundaryColor(bx)));
+      const col = hov ? '#ffd54a' : (sel ? '#ea580c' : (bx.id===activeId ? '#ff5c5c' : boundaryColor(bx)));
       ctx.setLineDash([]);
       ctx.strokeStyle = col;
       ctx.lineWidth = (bx.id===activeId) ? 2.5 : (hov||sel ? 2.2 : 1.4);
@@ -954,7 +1062,7 @@
       const e=boxExt(b), p1=w2s({x:e.x1,y:e.y1}), p2=w2s({x:e.x2,y:e.y2});
       const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y), ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
       ctx.beginPath(); ctx.rect(0,0,W,H); ctx.rect(x,y,ww,hh);
-      ctx.fillStyle='rgba(255,255,255,.25)'; ctx.fill('evenodd');
+      ctx.fillStyle='rgba(30,41,59,.07)'; ctx.fill('evenodd');
     }
   }
 
@@ -1105,15 +1213,15 @@
       ctx.rotate((el.rot||0) * Math.PI/180);
       ctx.scale(scale, scale);
       draw(ctx, {
-        fill: sel ? '#9ec5ff' : '#c2c8d2',
-        stroke: hov ? '#ffd54a' : (sel ? '#4c9aff' : '#6b7280'),
+        fill: sel ? '#fdba8c' : '#c2c8d2',
+        stroke: hov ? '#ffd54a' : (sel ? '#ea580c' : '#6b7280'),
         lineWidth: (hov ? 3 : (sel ? 1.8 : 1)) / scale
       }, w, h);
       ctx.restore();
       // insertion / reference point (middle of a side)
-      ctx.fillStyle = sel ? '#4c9aff' : '#1e2128';
+      ctx.fillStyle = sel ? '#ea580c' : '#1e293b';
       ctx.beginPath(); ctx.arc(P.x,P.y,3.5,0,Math.PI*2); ctx.fill();
-      ctx.strokeStyle='#e6e9ef'; ctx.lineWidth=1; ctx.stroke();
+      ctx.strokeStyle='#ffffff'; ctx.lineWidth=1; ctx.stroke();
     }
   }
   // An Element's own authored content: grey rounded rects and lines, plus
@@ -1129,14 +1237,14 @@
       if (sh.kind==='rect') {
         const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y), w=Math.abs(p2.x-p1.x), h=Math.abs(p2.y-p1.y);
         roundRectPath(ctx, x, y, w, h, Math.min(10, Math.min(w,h)/4));
-        ctx.fillStyle = sel ? '#8a94a3' : '#6b7280';
+        ctx.fillStyle = sel ? '#c3c8ce' : '#d9dce1';
         ctx.fill();
-        ctx.strokeStyle = sel ? '#4c9aff' : '#ffffff';
+        ctx.strokeStyle = sel ? '#ea580c' : '#3a4150';
         ctx.lineWidth = sel ? 2 : 1.2;
         ctx.stroke();
       } else {
         ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
-        ctx.strokeStyle = sel ? '#4c9aff' : '#c2c8d2';
+        ctx.strokeStyle = sel ? '#ea580c' : '#c2c8d2';
         ctx.lineWidth = sel ? 2.4 : 1.6;
         ctx.stroke();
       }
@@ -1211,8 +1319,8 @@
       const sel = (state.selection && state.selection.kind==='grid' && state.selection.id===g.id) || multiIds.has(g.id);
       const hov = g.id===hoverGridId;
       const gbx = g.boxId!=null ? findById(state.boxes, g.boxId) : null;
-      const base = gbx ? boundaryColor(gbx) : '#5b86c4'; // match the container's color
-      ctx.strokeStyle = hov ? '#ffd54a' : (sel ? '#9ec5ff' : base);
+      const base = gbx ? boundaryColor(gbx) : '#8a94a3'; // match the container's color
+      ctx.strokeStyle = hov ? '#ffd54a' : (sel ? '#fdba8c' : base);
       ctx.lineWidth = hov ? 2.5 : (sel ? 2 : 1.3);
       ctx.setLineDash([7, 5]);
       const gp = gridPos(g);
@@ -1273,7 +1381,7 @@
     offCtx.clearRect(0,0,cv.clientWidth,cv.clientHeight);
     offCtx.globalCompositeOperation='source-over';
     // 1) union outline base: fill every wall rectangle with the outline color
-    offCtx.fillStyle='#5b6472';
+    offCtx.fillStyle='#555555';
     for (const r of rects) fillWallRect(offCtx, r.A, r.B, r.H);
     // 2) white body: fill each rectangle's inset white, leaving the union outline
     offCtx.fillStyle='#ffffff';
@@ -1293,7 +1401,7 @@
       if (sel) {
         const a=w2s(endPos(wl.a)), b=w2s(endPos(wl.b));
         const thkPx=Math.max(2.8,(wl.thickness||0.5)*ppfNow());
-        ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1.6; ctx.lineJoin='miter'; ctx.lineCap='butt';
+        ctx.strokeStyle='#ea580c'; ctx.lineWidth=1.6; ctx.lineJoin='miter'; ctx.lineCap='butt';
         strokeWallRect(a, b, thkPx);
       }
     }
@@ -1387,7 +1495,7 @@
     ctx.save(); ctx.translate(mx,my); ctx.rotate(ang);
     ctx.font='600 12px Segoe UI, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='bottom';
     const tw=ctx.measureText(txt).width;
-    ctx.fillStyle='#1e2128'; ctx.fillRect(-tw/2-3,-15,tw+6,14);
+    ctx.fillStyle='#ffffff'; ctx.fillRect(-tw/2-3,-15,tw+6,14);
     ctx.fillStyle = color;
     ctx.fillText(txt, 0, -2);
     ctx.restore();
@@ -1764,9 +1872,9 @@
           ctx.beginPath(); ctx.moveTo(cs[0].x,cs[0].y);
           for (let i=1;i<cs.length;i++) ctx.lineTo(cs[i].x,cs[i].y);
           ctx.closePath();
-          ctx.fillStyle='rgba(158,197,255,.35)'; ctx.fill();
-          ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1.2; ctx.stroke();
-          const P=w2s(a); ctx.fillStyle='#4c9aff'; ctx.beginPath(); ctx.arc(P.x,P.y,3.5,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle='rgba(234,88,12,.25)'; ctx.fill();
+          ctx.strokeStyle='#ea580c'; ctx.lineWidth=1.2; ctx.stroke();
+          const P=w2s(a); ctx.fillStyle='#ea580c'; ctx.beginPath(); ctx.arc(P.x,P.y,3.5,0,Math.PI*2); ctx.fill();
         }
       }
       drawCursorMarker(); return;
@@ -1799,20 +1907,20 @@
       const p1=w2s({x:drag.x1,y:drag.y1}), p2=w2s({x:drag.x2,y:drag.y2});
       const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y);
       const ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
-      ctx.fillStyle='rgba(76,154,255,.12)'; ctx.fillRect(x,y,ww,hh);
-      ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
+      ctx.fillStyle='rgba(234,88,12,.10)'; ctx.fillRect(x,y,ww,hh);
+      ctx.strokeStyle='#ea580c'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
       ctx.strokeRect(x,y,ww,hh); ctx.setLineDash([]);
     } else if (drag.kind === 'shape') {
       const p1=w2s({x:drag.x1,y:drag.y1}), p2=w2s({x:drag.x2,y:drag.y2});
       if (drag.shapeKind==='rect') {
         const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y), ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
         roundRectPath(ctx, x, y, ww, hh, Math.min(10, Math.min(ww,hh)/4));
-        ctx.fillStyle='rgba(107,114,128,.7)'; ctx.fill();
-        ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1.2; ctx.stroke();
+        ctx.fillStyle='rgba(217,220,225,.85)'; ctx.fill();
+        ctx.strokeStyle='#ea580c'; ctx.lineWidth=1.2; ctx.stroke();
         labelAt(p2, `${fmtFeet(Math.abs(drag.x2-drag.x1))} × ${fmtFeet(Math.abs(drag.y2-drag.y1))}`);
       } else {
         ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
-        ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1.8; ctx.stroke();
+        ctx.strokeStyle='#ea580c'; ctx.lineWidth=1.8; ctx.stroke();
         labelAt(p2, fmtFeet(Math.hypot(drag.x2-drag.x1, drag.y2-drag.y1)));
       }
     }
@@ -1849,7 +1957,7 @@
   function drawCursorMarker(){
     if (state.tool==='select' && !drag) return;
     const s=w2s(mouseW);
-    ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1.2;
+    ctx.strokeStyle='#ea580c'; ctx.lineWidth=1.2;
     ctx.beginPath(); ctx.arc(s.x,s.y,5,0,Math.PI*2); ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(s.x-9,s.y); ctx.lineTo(s.x+9,s.y);
@@ -2052,8 +2160,8 @@
       const a=endPos(wl.a), b=endPos(wl.b);
       const ax=SX(a.x),ay=SY(a.y),bx=SX(b.x),by=SY(b.y);
       const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1, hpx=Math.max(1.2,(wl.thickness||0.5)*sc/2), nx=-dy/len*hpx, ny=dx/len*hpx;
-      c.fillStyle='#e6e9ef'; c.beginPath(); c.moveTo(ax+nx,ay+ny);c.lineTo(bx+nx,by+ny);c.lineTo(bx-nx,by-ny);c.lineTo(ax-nx,ay-ny);c.closePath();c.fill();
-      c.strokeStyle='#5b6472';c.lineWidth=0.6;c.stroke();
+      c.fillStyle='#ffffff'; c.beginPath(); c.moveTo(ax+nx,ay+ny);c.lineTo(bx+nx,by+ny);c.lineTo(bx-nx,by-ny);c.lineTo(ax-nx,ay-ny);c.closePath();c.fill();
+      c.strokeStyle='#555555';c.lineWidth=0.6;c.stroke();
     }
     // elements that belong to this box or one of its descendants
     for(const el of state.elements){
@@ -2085,8 +2193,8 @@
       if (sh.kind==='rect') {
         const x=Math.min(p1x,p2x), y=Math.min(p1y,p2y), ww=Math.abs(p2x-p1x), hh=Math.abs(p2y-p1y);
         roundRectPath(c, x, y, ww, hh, Math.min(4, Math.min(ww,hh)/4));
-        c.fillStyle='#6b7280'; c.fill();
-        c.strokeStyle='#ffffff'; c.lineWidth=1; c.stroke();
+        c.fillStyle='#d9dce1'; c.fill();
+        c.strokeStyle='#3a4150'; c.lineWidth=1; c.stroke();
       } else {
         c.strokeStyle='#c2c8d2'; c.lineWidth=1; c.beginPath(); c.moveTo(p1x,p1y); c.lineTo(p2x,p2y); c.stroke();
       }
@@ -2151,8 +2259,8 @@
       const a=snapshotEndPos(snapshot,wl.a), b=snapshotEndPos(snapshot,wl.b);
       const ax=SX(a.x),ay=SY(a.y),bx=SX(b.x),by=SY(b.y);
       const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1, hpx=Math.max(1.2,(wl.thickness||0.5)*sc/2), nx=-dy/len*hpx, ny=dx/len*hpx;
-      c.fillStyle='#e6e9ef'; c.beginPath(); c.moveTo(ax+nx,ay+ny);c.lineTo(bx+nx,by+ny);c.lineTo(bx-nx,by-ny);c.lineTo(ax-nx,ay-ny);c.closePath();c.fill();
-      c.strokeStyle='#5b6472';c.lineWidth=0.6;c.stroke();
+      c.fillStyle='#ffffff'; c.beginPath(); c.moveTo(ax+nx,ay+ny);c.lineTo(bx+nx,by+ny);c.lineTo(bx-nx,by-ny);c.lineTo(ax-nx,ay-ny);c.closePath();c.fill();
+      c.strokeStyle='#555555';c.lineWidth=0.6;c.stroke();
     }
     for(const el of snapshot.elements){
       const p=snapshotEndPos(snapshot, el.ref);
@@ -2179,8 +2287,8 @@
       if (sh.kind==='rect') {
         const x=Math.min(p1x,p2x), y=Math.min(p1y,p2y), ww=Math.abs(p2x-p1x), hh=Math.abs(p2y-p1y);
         roundRectPath(c, x, y, ww, hh, Math.min(4, Math.min(ww,hh)/4));
-        c.fillStyle='#6b7280'; c.fill();
-        c.strokeStyle='#ffffff'; c.lineWidth=1; c.stroke();
+        c.fillStyle='#d9dce1'; c.fill();
+        c.strokeStyle='#3a4150'; c.lineWidth=1; c.stroke();
       } else {
         c.strokeStyle='#c2c8d2'; c.lineWidth=1; c.beginPath(); c.moveTo(p1x,p1y); c.lineTo(p2x,p2y); c.stroke();
       }
@@ -2224,17 +2332,25 @@
     } catch(e) { /* corrupt or unavailable — start blank */ }
   }
   // Brief "Saved" confirmation on a button after a successful/failed save.
+  // Tile action glyphs, transcribed from Cedar Studio's own chrome icon set
+  // (chromeIcons.tsx SaveMark/TrashMark/CheckMark) — 16x16, stroke currentColor.
+  const ICON_SVG = {
+    save: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 2.6v7.2M5.2 7.2L8 10l2.8-2.8"/><path d="M2.8 12.4h10.4"/></svg>',
+    trash: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2.8 4.4h10.4M6.2 4.4V2.8h3.6v1.6M4.2 4.4l.7 8.8h6.2l.7-8.8"/></svg>',
+    check: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8.4l3.2 3.2L13 4.8"/></svg>',
+  };
   function flashSaveResult(btn, ok){
-    const original = btn.textContent;
-    btn.textContent = ok ? 'Saved' : 'Save failed';
+    const original = btn.innerHTML;
+    btn.innerHTML = ok ? ICON_SVG.check : '!';
+    btn.title = ok ? 'Saved' : 'Save failed';
     btn.disabled = true;
-    setTimeout(()=>{ btn.textContent = original; btn.disabled = false; }, 1000);
+    setTimeout(()=>{ btn.innerHTML = original; btn.title='Save'; btn.disabled = false; }, 1000);
   }
   function makeActionsRow(onDelete){
     const actions=document.createElement('div'); actions.className='actions';
-    const saveBtn=document.createElement('button'); saveBtn.type='button'; saveBtn.className='save'; saveBtn.textContent='Save';
+    const saveBtn=document.createElement('button'); saveBtn.type='button'; saveBtn.className='save'; saveBtn.title='Save'; saveBtn.innerHTML=ICON_SVG.save;
     saveBtn.addEventListener('click', e=>{ e.stopPropagation(); flashSaveResult(saveBtn, saveStateToStorage()); });
-    const delBtn=document.createElement('button'); delBtn.type='button'; delBtn.className='danger'; delBtn.textContent='Delete';
+    const delBtn=document.createElement('button'); delBtn.type='button'; delBtn.className='danger'; delBtn.title='Delete'; delBtn.innerHTML=ICON_SVG.trash;
     delBtn.addEventListener('click', e=>{ e.stopPropagation(); onDelete(); });
     actions.appendChild(saveBtn); actions.appendChild(delBtn);
     return actions;
@@ -2274,6 +2390,18 @@
   // select-on-canvas click (used by root rows to open/focus their branches).
   // `hasBranches` just draws the little star badge on the preview — pass it
   // only for a root row so a branch row inside the tray doesn't get one too.
+  // Overall footprint of a Library/Insert tile's artifact — resolved through
+  // any live grid bindings for a live box, or read straight off the frozen
+  // snapshot's own root entry for an archived one. "—" when neither extent
+  // is finite (nothing drawn yet).
+  function tileSizeLabel(entry){
+    const { live, obj } = entry;
+    const e = live ? boxExt(obj) : (obj.snapshot.boxes.find(b=>b.id===obj.id) || null);
+    if (!e) return '—';
+    const w = Math.abs(e.x2-e.x1), h = Math.abs(e.y2-e.y1);
+    if (!isFinite(w) || !isFinite(h) || (w<1e-6 && h<1e-6)) return '—';
+    return `${fmtFeet(w)} × ${fmtFeet(h)}`;
+  }
   function buildLibraryItem(kind, entry, onCardClick, hasBranches){
     const { live, obj } = entry;
     const item=document.createElement('div');
@@ -2286,6 +2414,8 @@
     inp.addEventListener('click', e=>e.stopPropagation());
     inp.addEventListener('input', ()=>{ obj.name=inp.value; });
     nm.appendChild(inp);
+    const dims=document.createElement('div'); dims.className='dims'; dims.textContent=tileSizeLabel(entry);
+    nm.appendChild(dims);
     item.appendChild(nm);
     item.appendChild(makeActionsRow(()=> live ? deleteBoundary(obj.id) : deleteArchivedMaster(obj.id)));
     item.addEventListener('click', e=>{
@@ -2387,6 +2517,17 @@
       if (hasBranches && state.branchRootId===g.root.obj.id) card.classList.add('lib-selected');
       listEl.appendChild(card);
     }
+    // Pushed branches from every Product, waiting for review — only shown
+    // here, in the standalone Unit Plan/Layout Editor's own top-level list
+    // (Products never push anything, and this isn't shown while browsing
+    // nested inside an open Product).
+    if (standalone && (kind==='unitplan' || kind==='layout')) {
+      for (const g of buildPushedGroups(kind)) {
+        const header=document.createElement('div'); header.className='pushed-group-header'; header.textContent=g.name;
+        listEl.appendChild(header);
+        for (const box of g.items) listEl.appendChild(buildPushedCard(kind, box));
+      }
+    }
   }
   const productsListEl=document.getElementById('productsList');
   function buildProductsList(){ buildKindList('product', productsListEl); }
@@ -2470,7 +2611,9 @@
       { label: 'Copy', sc:'Ctrl+C', act:()=>copyBox(boxId) },
       { label: 'Paste', sc:'Ctrl+V', act:()=>pasteClipboard(s2w({x,y})), disabled:!clipboard },
       { divider:true },
-      { label: 'Delete', sc:'Del', danger:true, act:()=>{ state.multiSelection=[]; state.selection={kind:'box',id:boxId}; deleteSelection(); } },
+      { label: 'Delete', sc:'Del', danger:true, disabled:isProtectedRoot(boxId),
+        title: isProtectedRoot(boxId) ? "The open file itself can't be deleted from the canvas — use Delete in the Library instead" : '',
+        act:()=>{ state.multiSelection=[]; state.selection={kind:'box',id:boxId}; deleteSelection(); } },
     ];
     menuEl.innerHTML='';
     for (const it of items){
@@ -2889,6 +3032,8 @@
     const nm=document.createElement('div'); nm.className='nm';
     const label=document.createElement('div'); label.className='label'; label.textContent=obj.name || KIND_LABEL[kind];
     nm.appendChild(label);
+    const dims=document.createElement('div'); dims.className='dims'; dims.textContent=tileSizeLabel(entry);
+    nm.appendChild(dims);
     item.appendChild(nm);
     item.addEventListener('click', onCardClick);
     if (live) drawLiveThumb(cv2, obj); else drawSnapshotThumb(cv2, obj.snapshot);
@@ -3151,9 +3296,14 @@
   // The nearest ancestor Product's name (or null if there isn't one — a
   // top-level Product has no parent to be tagged with).
   function nearestProductName(box){
+    const p = nearestProduct(box);
+    return p ? (p.name || 'Product') : null;
+  }
+  // The nearest ancestor Product box itself (or null if there isn't one).
+  function nearestProduct(box){
     let p = box.parentId!=null ? findById(state.boxes, box.parentId) : null;
     while (p && p.kind!=='product') p = p.parentId!=null ? findById(state.boxes, p.parentId) : null;
-    return p ? (p.name || 'Product') : null;
+    return p || null;
   }
   // The family's original, un-branched root — live or archived — that `box`
   // (a placed instance, i.e. box.masterId is set) ultimately descends from.
@@ -3216,6 +3366,92 @@
     refreshTray();
     saveStateToStorage();
   }
+  // "Push": every branched Unit Plan/Layout inside the currently open
+  // Product becomes visible for review in the Unit Plan/Layout Editor's own
+  // library (grouped there by which Product it came from) — nothing else
+  // changes; it still lives, unmoved, inside this Product exactly as
+  // before, and stays that way until someone Approves or Deletes it there.
+  function pushBranches(){
+    const root = currentRootBox();
+    if (!root || root.kind!=='product') return;
+    for (const id of subtreeIds(root.id)) {
+      const b = findById(state.boxes, id);
+      if (b && (b.kind==='unitplan'||b.kind==='layout') && b.rootId!=null) b.pushed = true;
+    }
+    refreshTray();
+    saveStateToStorage();
+  }
+  // "Approve" (from the Unit Plan/Layout Editor's pushed-branches review):
+  // promotes this specific branch into a genuine standalone root of its
+  // own — detached from the Product it was nested in (its current resolved
+  // position is baked in place of its old grid/edge bindings, which would
+  // otherwise dangle once its old parent is out of the picture), no longer
+  // "a branch of X" (a fresh rootId of its own, so IT can now be branched),
+  // and immediately insertable anywhere a Unit Plan/Layout is insertable —
+  // exactly like any other standalone file made via its own Editor's "+".
+  // The Product it came from is completely unaffected: this is the same
+  // live box, just no longer nested there — its old parent's canvas simply
+  // stops including it going forward.
+  function approveBranch(boxId){
+    const box = findById(state.boxes, boxId);
+    if (!box) return;
+    const e = boxExt(box);
+    box.x1=e.x1; box.y1=e.y1; box.x2=e.x2; box.y2=e.y2;
+    box.bind = { x1:null, y1:null, x2:null, y2:null };
+    box.parentId = null;
+    box.rootId = null;
+    box.branchCount = undefined;
+    box.pushed = false;
+    refreshTray();
+    saveStateToStorage();
+    draw();
+  }
+  // "Delete" (from the same review list): just un-pushes it — it drops out
+  // of the Unit Plan/Layout Editor's review list, but the box itself, and
+  // everywhere it's actually used (the Product's own Library/Insert/canvas),
+  // is completely untouched.
+  function rejectPushedBranch(boxId){
+    const box = findById(state.boxes, boxId);
+    if (!box) return;
+    box.pushed = false;
+    refreshTray();
+    saveStateToStorage();
+    draw();
+  }
+  // Every pushed branch of `kind`, grouped by which Product it came from —
+  // shown underneath a standalone Editor's own file list.
+  function buildPushedGroups(kind){
+    const groups = new Map(); // productId -> {name, items:[box,...]}
+    for (const b of state.boxes) {
+      if (b.kind!==kind || !b.pushed) continue;
+      const p = nearestProduct(b);
+      const pid = p ? p.id : 0;
+      const pname = p ? (p.name||'Product') : 'Unknown Product';
+      if (!groups.has(pid)) groups.set(pid, {name:pname, items:[]});
+      groups.get(pid).items.push(b);
+    }
+    return [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name));
+  }
+  function buildPushedCard(kind, box){
+    const item=document.createElement('div'); item.className='item pushed';
+    const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
+    const nm=document.createElement('div'); nm.className='nm';
+    const label=document.createElement('div'); label.className='label'; label.textContent=box.name||KIND_LABEL[kind];
+    nm.appendChild(label);
+    const dims=document.createElement('div'); dims.className='dims'; dims.textContent=tileSizeLabel({live:true,obj:box});
+    nm.appendChild(dims);
+    item.appendChild(nm);
+    const actions=document.createElement('div'); actions.className='actions';
+    const approveBtn=document.createElement('button'); approveBtn.type='button'; approveBtn.className='approve'; approveBtn.title='Approve'; approveBtn.innerHTML=ICON_SVG.check;
+    approveBtn.addEventListener('click', e=>{ e.stopPropagation(); approveBranch(box.id); });
+    const delBtn=document.createElement('button'); delBtn.type='button'; delBtn.className='danger'; delBtn.title='Delete'; delBtn.innerHTML=ICON_SVG.trash;
+    delBtn.addEventListener('click', e=>{ e.stopPropagation(); rejectPushedBranch(box.id); });
+    actions.appendChild(approveBtn); actions.appendChild(delBtn);
+    item.appendChild(actions);
+    item.addEventListener('click', e=>{ if(e.target.closest('.actions'))return; state.selection={kind:'box',id:box.id}; draw(); });
+    drawLiveThumb(cv2, box);
+    return item;
+  }
   // Boundary drawing (Unit Plan/Layout) and element placement no longer
   // have their own toolbar buttons — everything nested gets PLACED via the
   // Insert panel instead (an existing Unit Plan/Layout/Element, made in its
@@ -3251,9 +3487,10 @@
   // Library, "+", and toolbar are pointed at. Switching modes closes
   // whatever's currently open if it's a different kind (the canvas goes
   // blank until you open or create one of the new mode's own files).
-  const editorModeSelectEl = document.getElementById('editorModeSelect');
   const boundaryToolsetEl = document.getElementById('boundaryToolset');
   const elementEditorToolsetEl = document.getElementById('elementEditorToolset');
+  const pushBranchesBtn = document.getElementById('pushBranchesBtn');
+  pushBranchesBtn.addEventListener('click', pushBranches);
   function updateToolsetVisibility(){
     const isElementMode = state.editorMode==='element';
     boundaryToolsetEl.hidden = isElementMode;
@@ -3261,9 +3498,39 @@
     // Elements aren't placed into anything (yet) — there's nothing to
     // Insert while authoring one, so the button's just hidden in this mode.
     toggleInsertBtn.hidden = isElementMode;
+    // Pushing only makes sense from within Product Editor.
+    pushBranchesBtn.hidden = state.editorMode!=='product';
   }
-  editorModeSelectEl.addEventListener('change', e=>{
-    state.editorMode = e.target.value;
+  // The four editor-mode marks, transcribed from Cedar Studio's own nav rail
+  // (chromeIcons.tsx: ElementsMark/LayoutsMark/UnitPlansMark/ProductsMark) —
+  // a circle (Elements, the atomic part), a plated room (Layouts), a plate
+  // split into two levels (Unit Plans), and two door panels (Products).
+  const MODE_LABEL = { product:'Product Editor', unitplan:'Unit Plan Editor', layout:'Layout Editor', element:'Element Editor' };
+  const MODE_MARK_SVG = {
+    product: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2 2h6.5A2.5 2.5 0 0 1 11 4.5v15A2.5 2.5 0 0 1 8.5 22H2Z"/><path d="M22 2h-6.5A2.5 2.5 0 0 0 13 4.5v15A2.5 2.5 0 0 0 15.5 22H22Z"/></svg>',
+    unitplan: '<svg viewBox="0 0 46.78 46.78" fill="none" stroke="currentColor" stroke-width="3"><rect x="4" y="4" width="38.78" height="38.78" rx="4.9"/><path d="M4 23.39h38.78"/></svg>',
+    layout: '<svg viewBox="0 0 46.78 46.78" fill="none" stroke="currentColor" stroke-width="3"><rect x="4" y="4" width="38.78" height="38.78" rx="5.11"/><circle cx="23.39" cy="23.39" r="6.996"/></svg>',
+    element: '<svg viewBox="0 0 46.78 46.78" fill="none" stroke="currentColor" stroke-width="3"><circle cx="23.39" cy="23.39" r="19.39"/></svg>',
+  };
+  const modeBtnEl = document.getElementById('modeBtn');
+  const modeBtnMarkEl = document.getElementById('modeBtnMark');
+  const modeBtnLabelEl = document.getElementById('modeBtnLabel');
+  const modeMenuEl = document.getElementById('modeMenu');
+  for (const opt of modeMenuEl.querySelectorAll('.opt')) {
+    opt.querySelector('.mark').innerHTML = MODE_MARK_SVG[opt.dataset.mode];
+    opt.addEventListener('click', ()=>{ closeModeMenu(); setEditorMode(opt.dataset.mode); });
+  }
+  function closeModeMenu(){ modeMenuEl.hidden = true; modeBtnEl.classList.remove('open'); }
+  function openModeMenu(){ modeMenuEl.hidden = false; modeBtnEl.classList.add('open'); }
+  modeBtnEl.addEventListener('click', e=>{ e.stopPropagation(); modeMenuEl.hidden ? openModeMenu() : closeModeMenu(); });
+  document.addEventListener('mousedown', e=>{ if (!modeMenuEl.hidden && !modeMenuEl.contains(e.target) && e.target!==modeBtnEl) closeModeMenu(); });
+  function updateModeSwitcher(){
+    modeBtnMarkEl.innerHTML = MODE_MARK_SVG[state.editorMode];
+    modeBtnLabelEl.textContent = MODE_LABEL[state.editorMode];
+    for (const opt of modeMenuEl.querySelectorAll('.opt')) opt.classList.toggle('current', opt.dataset.mode===state.editorMode);
+  }
+  function setEditorMode(mode){
+    state.editorMode = mode;
     const root = currentRootBox();
     if (root && root.kind !== state.editorMode) closeSubtree(root.id);
     state.selection = null; state.multiSelection = [];
@@ -3271,10 +3538,11 @@
     state.insertBranchRootId = null; state.insertBranchRootKind = null;
     setSidePanel('library');
     updateToolsetVisibility();
+    updateModeSwitcher();
     refreshTray();
     saveStateToStorage();
     draw();
-  });
+  }
 
   // Freeze every wall endpoint at its current resolved position. Call before
   // removing grids/boxes so anchored walls stay put instead of jumping back.
@@ -3349,8 +3617,18 @@
       removeBoxSubtree(s.id);
     }
   }
+  // The standalone file a dedicated Editor mode currently has open (a
+  // top-level box, parentId null) can't be deleted from the canvas — there
+  // would be nothing left to show, and it's too easy to hit Delete/Backspace
+  // with it selected by habit. The Library's own Delete button (a deliberate,
+  // separate action) is unaffected.
+  function isProtectedRoot(boxId){
+    const b = findById(state.boxes, boxId);
+    return !!(b && b.parentId==null && b.open);
+  }
   function deleteSelection(){
-    const targets = state.multiSelection.length ? state.multiSelection : (state.selection ? [state.selection] : []);
+    const targets = (state.multiSelection.length ? state.multiSelection : (state.selection ? [state.selection] : []))
+      .filter(s => !(s.kind==='box' && isProtectedRoot(s.id)));
     if (!targets.length) return;
     for (const s of targets) deleteOne(s);
     refreshTray(); // wall/element/grid/box removal can all change a preview's contents
@@ -3432,7 +3710,7 @@
     loadStateFromStorage(); // restore whatever was last explicitly saved, if anything
   }
   seed();
-  editorModeSelectEl.value = state.editorMode;
+  updateModeSwitcher();
   updateToolsetVisibility();
   refreshTray();
   resize();
