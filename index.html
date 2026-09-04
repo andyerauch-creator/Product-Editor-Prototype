@@ -64,6 +64,20 @@
   .tool svg { width: 18px; height: 18px; }
   .sep { width: 1px; height: 34px; background: var(--border); margin: 0 4px; }
 
+  #toolbar .group {
+    display: flex; flex-direction: column; gap: 6px;
+    border: none; margin: 0; padding: 0; margin-top: 4px;
+  }
+  #toolbar .group summary {
+    list-style: none; cursor: pointer; user-select: none;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 10px; letter-spacing: .3px; text-transform: uppercase; color: var(--muted);
+    padding: 6px 2px 4px; border-top: 1px solid var(--border);
+  }
+  #toolbar .group summary::-webkit-details-marker { display: none; }
+  #toolbar .group summary::after { content: '▸'; font-size: 9px; transition: transform .15s; }
+  #toolbar .group[open] summary::after { transform: rotate(90deg); }
+
   .field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
   .field input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); }
 
@@ -123,7 +137,8 @@
     display: flex; flex-direction: column; overflow-y: auto;
   }
   #tray h3 { font-size: 12px; font-weight: 600; padding: 12px 12px 8px; color: var(--ink); }
-  #tray .list { padding: 0 10px 4px; }
+  #tray .list { padding: 0 10px 10px; }
+  #tray .list:not(:last-child) { border-bottom: 1px solid var(--border); }
   #tray .empty { color: var(--muted); font-size: 11px; padding: 4px 2px 10px; line-height: 1.5; }
   #tray .row {
     display: flex; align-items: center; gap: 6px;
@@ -174,22 +189,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3l6 16 2-6 6-2z"/></svg>
         Select
       </div>
-      <div class="tool" data-tool="product" title="Product boundary (B) — top level">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="14" rx="1"/></svg>
-        Product
-      </div>
-      <div class="tool" data-tool="unitplan" title="Unit Plan boundary (U) — goes inside an open Product">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-        Unit Plan
-      </div>
-      <div class="tool" data-tool="layout" title="Layout boundary (Y) — goes inside an open Unit Plan">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
-        Layout
-      </div>
-      <div class="tool" data-tool="element" title="Element (N) — place a toilet on an intersection/corner">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="3" width="10" height="4.5" rx="1" fill="currentColor" stroke="none"/><ellipse cx="12" cy="15" rx="7" ry="6.2"/></svg>
-        Element
-      </div>
       <div class="tool" data-tool="grid" title="Draw grid line (G)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h18M3 16h18M8 3v18M16 3v18"/></svg>
         Grid line
@@ -218,13 +217,30 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="8" width="18" height="8" rx="1"/></svg>
         12&quot; Wall
       </div>
+      <details class="group" open>
+        <summary>Boundaries</summary>
+        <div class="tool" data-tool="product" title="Product boundary (B) — top level">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="14" rx="1"/></svg>
+          Product
+        </div>
+        <div class="tool" data-tool="unitplan" title="Unit Plan boundary (U) — goes inside an open Product">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+          Unit Plan
+        </div>
+        <div class="tool" data-tool="layout" title="Layout boundary (Y) — goes inside an open Unit Plan">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
+          Layout
+        </div>
+        <div class="tool" data-tool="element" title="Element (N) — place a toilet on an intersection/corner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="3" width="10" height="4.5" rx="1" fill="currentColor" stroke="none"/><ellipse cx="12" cy="15" rx="7" ry="6.2"/></svg>
+          Element
+        </div>
+      </details>
     </div>
     <div id="tray">
-      <h3>Products</h3>
+      <h3 id="libraryTitle">Library</h3>
       <div class="list" id="productsList"></div>
-      <h3>Unit Plans</h3>
       <div class="list" id="unitplansList"></div>
-      <h3>Saved Layouts</h3>
       <div class="list" id="trayList"></div>
     </div>
     <div id="stage">
@@ -699,6 +715,7 @@
     updateHud();
     updateFlexPanel();
     updateToolAvailability();
+    updateLibraryTitle();
   }
 
   function drawBackgroundGrid(w, h) {
@@ -1914,7 +1931,7 @@
     // boundary tools are only usable when their kind is the drawable one
     if (['product','unitplan','layout'].includes(name) && name!==drawableBoundaryKind()) return;
     state.tool=name; drag=null; dimBuild=null; hoverList=[]; hoverIdx=0;
-    [...toolbar.children].forEach(c=>c.classList.toggle('active', c.dataset.tool===name));
+    toolbar.querySelectorAll('.tool').forEach(c=>c.classList.toggle('active', c.dataset.tool===name));
     updateCursor();
     updateTip();
     draw();
@@ -1936,6 +1953,14 @@
     const active = activeContainer();
     const child = { product:'unitplan', unitplan:'layout', layout:null };
     return active ? child[active.kind] : 'product';
+  }
+  // The tray's title tracks whatever boundary you currently have open —
+  // "Library" alone when nothing is open.
+  const KIND_LABEL = { product:'Product', unitplan:'Unit Plan', layout:'Layout' };
+  const libraryTitleEl = document.getElementById('libraryTitle');
+  function updateLibraryTitle(){
+    const active = activeContainer();
+    libraryTitleEl.textContent = active ? `Library: ${KIND_LABEL[active.kind]}` : 'Library';
   }
   // Open a boundary and all its ancestors, so the full nesting chain is active
   // (you then close them from the inside out).
