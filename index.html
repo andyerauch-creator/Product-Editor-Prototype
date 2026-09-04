@@ -41,6 +41,12 @@
   }
   header h1 { font-size: 14px; font-weight: 600; letter-spacing: .3px; }
   header h1 span { color: var(--muted); font-weight: 400; }
+  #editorModeSelect {
+    font: inherit; font-size: 14px; font-weight: 600; letter-spacing: .3px;
+    background: var(--panel); color: var(--ink); border: 1px solid transparent;
+    border-radius: 6px; padding: 3px 4px; cursor: pointer; appearance: auto;
+  }
+  #editorModeSelect:hover, #editorModeSelect:focus { border-color: var(--border); background: var(--panel-2); }
 
   #toolbar {
     display: flex; flex-direction: column; gap: 6px; align-items: stretch;
@@ -198,7 +204,12 @@
 <body>
 <div id="app">
   <header>
-    <h1>Product Editor</h1>
+    <select id="editorModeSelect" title="Switch which kind of file you're editing">
+      <option value="product">Product Editor</option>
+      <option value="unitplan">Unit Plan Editor</option>
+      <option value="layout">Layout Editor</option>
+      <option value="element">Element Editor</option>
+    </select>
     <div class="sep"></div>
     <span class="field" title="Show/hide dimensions by the container they were drawn in">Dims:</span>
     <label class="field" style="color:#3b82f6"><input id="showProductDims" type="checkbox" checked> Product</label>
@@ -221,73 +232,90 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3l6 16 2-6 6-2z"/></svg>
         Select
       </div>
-      <div class="tool" data-tool="grid" title="Draw grid line (G)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h18M3 16h18M8 3v18M16 3v18"/></svg>
-        Grid line
-      </div>
-      <div class="tool" data-tool="dim" title="Dimension (D)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18M3 9v6M21 9v6"/></svg>
-        Dimension
-      </div>
-      <div class="tool" data-tool="lockdim" title="Lock dimension (L) — forces the tagged element to keep this distance">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17h18M3 15v4M21 15v4"/><rect x="9" y="4" width="6" height="5" rx="1"/><path d="M10.5 4V3a1.5 1.5 0 0 1 3 0v1"/></svg>
-        Lock Dim
-      </div>
-      <div class="tool" data-tool="eqdim" title="EQ dimension (E) — forces tagged grids to equal spacing">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h18M3 12v4M21 12v4M9 12v4M15 12v4"/><path d="M6 6h5M6 9h5"/></svg>
-        EQ Dim
-      </div>
-      <div class="tool" data-tool="flexdim" title="Flex dimension (F) — distribute size change across segments by %">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h18M3 12v4M21 12v4M8 12v4M14 12v4"/><path d="M4 6l4 3-4 0z" fill="currentColor"/><path d="M16 6h5"/></svg>
-        Flex Dim
-      </div>
-      <div class="tool" data-tool="wall6" title="Draw 6&quot; wall">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="10" width="18" height="4" rx="1"/></svg>
-        6&quot; Wall
-      </div>
-      <div class="tool" data-tool="wall12" title="Draw 12&quot; wall">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="8" width="18" height="8" rx="1"/></svg>
-        12&quot; Wall
-      </div>
-      <details class="group" open>
-        <summary>Boundaries</summary>
-        <div class="tool" data-tool="unitplan" title="Unit Plan boundary (U) — goes inside an open Product">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-          Unit Plan
+      <div id="boundaryToolset">
+        <div class="tool" data-tool="grid" title="Draw grid line (G)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h18M3 16h18M8 3v18M16 3v18"/></svg>
+          Grid line
         </div>
-        <div class="tool" data-tool="layout" title="Layout boundary (Y) — goes inside an open Unit Plan">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
-          Layout
+        <div class="tool" data-tool="dim" title="Dimension (D)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18M3 9v6M21 9v6"/></svg>
+          Dimension
         </div>
-        <div class="tool" id="elementToggle" title="Element — place furniture/fixtures (only usable while a Layout is open)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="1.5"/><rect x="6" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/><rect x="13" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/></svg>
-          Element
+        <div class="tool" data-tool="lockdim" title="Lock dimension (L) — forces the tagged element to keep this distance">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17h18M3 15v4M21 15v4"/><rect x="9" y="4" width="6" height="5" rx="1"/><path d="M10.5 4V3a1.5 1.5 0 0 1 3 0v1"/></svg>
+          Lock Dim
         </div>
-        <div id="elementSubTools" hidden>
-          <div class="tool" data-tool="element:toilet" title="Toilet (N) — place on an intersection/corner">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="3" width="10" height="4.5" rx="1" fill="currentColor" stroke="none"/><ellipse cx="12" cy="15" rx="7" ry="6.2"/></svg>
-            Toilet
+        <div class="tool" data-tool="eqdim" title="EQ dimension (E) — forces tagged grids to equal spacing">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h18M3 12v4M21 12v4M9 12v4M15 12v4"/><path d="M6 6h5M6 9h5"/></svg>
+          EQ Dim
+        </div>
+        <div class="tool" data-tool="flexdim" title="Flex dimension (F) — distribute size change across segments by %">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h18M3 12v4M21 12v4M8 12v4M14 12v4"/><path d="M4 6l4 3-4 0z" fill="currentColor"/><path d="M16 6h5"/></svg>
+          Flex Dim
+        </div>
+        <div class="tool" data-tool="wall6" title="Draw 6&quot; wall">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="10" width="18" height="4" rx="1"/></svg>
+          6&quot; Wall
+        </div>
+        <div class="tool" data-tool="wall12" title="Draw 12&quot; wall">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="8" width="18" height="8" rx="1"/></svg>
+          12&quot; Wall
+        </div>
+        <details class="group" open>
+          <summary>Boundaries</summary>
+          <div class="tool" data-tool="unitplan" title="Unit Plan boundary (U) — goes inside an open Product">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+            Unit Plan
           </div>
-          <div class="tool" data-tool="element:table" title="Table — place on an intersection/corner">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="7" width="16" height="10" rx="1.5" fill="currentColor" stroke="none"/></svg>
-            Table
+          <div class="tool" data-tool="layout" title="Layout boundary (Y) — goes inside an open Unit Plan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
+            Layout
           </div>
-          <div class="tool" data-tool="element:bed" title="Bed — place on an intersection/corner">
+          <div class="tool" id="elementToggle" title="Element — place furniture/fixtures (only usable while a Layout is open)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="1.5"/><rect x="6" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/><rect x="13" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/></svg>
-            Bed
+            Element
           </div>
-          <div class="tool" data-tool="element:car" title="Car — place on an intersection/corner">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="2" width="10" height="20" rx="4"/><path d="M7.5 8h9M7.5 16h9"/></svg>
-            Car
+          <div id="elementSubTools" hidden>
+            <div class="tool" data-tool="element:toilet" title="Toilet (N) — place on an intersection/corner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="3" width="10" height="4.5" rx="1" fill="currentColor" stroke="none"/><ellipse cx="12" cy="15" rx="7" ry="6.2"/></svg>
+              Toilet
+            </div>
+            <div class="tool" data-tool="element:table" title="Table — place on an intersection/corner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="7" width="16" height="10" rx="1.5" fill="currentColor" stroke="none"/></svg>
+              Table
+            </div>
+            <div class="tool" data-tool="element:bed" title="Bed — place on an intersection/corner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="1.5"/><rect x="6" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/><rect x="13" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/></svg>
+              Bed
+            </div>
+            <div class="tool" data-tool="element:car" title="Car — place on an intersection/corner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="2" width="10" height="20" rx="4"/><path d="M7.5 8h9M7.5 16h9"/></svg>
+              Car
+            </div>
           </div>
+        </details>
+      </div>
+      <div id="elementEditorToolset" hidden>
+        <div class="tool" data-tool="shape:rect" title="Rounded rectangle — grey filled shape">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="6" width="16" height="12" rx="3" fill="currentColor" stroke="none"/></svg>
+          Rounded Rect
         </div>
-      </details>
+        <div class="tool" data-tool="shape:line" title="Line">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20L20 4"/></svg>
+          Line
+        </div>
+        <div class="tool" data-tool="shape:point" title="Insertion point — exactly one per element, marks where it anchors when placed">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/></svg>
+          Insertion Pt
+        </div>
+      </div>
     </div>
     <div id="tray" class="panel">
       <h3 id="libraryTitle">Library</h3>
       <div class="list" id="productsList"></div>
       <div class="list" id="unitplansList"></div>
       <div class="list" id="layoutsList"></div>
+      <div class="list" id="elementsList"></div>
     </div>
     <div id="branchesTray" class="panel" hidden>
       <h3><span id="branchesTitleText">Branches</span><button type="button" id="closeBranchesBtn" class="close-tray-btn" title="Close">&times;</button></h3>
@@ -327,6 +355,10 @@
   const WALL_THK = { wall6: 6/12, wall12: 12/12 };
   const state = {
     tool: 'select',
+    editorMode: 'product', // 'product'|'unitplan'|'layout'|'element' — which kind of
+                  // standalone file the header dropdown, "+", and top-level Library
+                  // are currently pointed at (Product Editor's own nested boxes are
+                  // unaffected by this — it only matters at the top level)
     gridSpacing: 2,        // feet
     snap: true,
     view: { x: 0, y: 0, scale: 1 }, // pan in px, zoom factor
@@ -335,6 +367,9 @@
     walls: [],       // {id, a:{x,y}, b:{x,y}}  feet
     dims: [],        // {id, a:{x,y}, b:{x,y}, off}  feet, off=offset feet
     elements: [],    // {id, ref:{x,y,xRef,yRef}, rot}  1×1 ft square, ref = insertion point
+    elementShapes: [], // {id, elementId, kind:'rect'|'line', x1,y1,x2,y2} — the grey
+                  // rounded-rects and lines an Element (drawn in the Element Editor)
+                  // is made of. elementId is the top-level 'element' box that owns it.
     showDims: { product:true, unitplan:true, layout:true }, // dim visibility per container kind
     selection: null, // {kind, id}
     inserting: null, // {sourceId, picks:[{axis,ref,coord}]} while picking 4 grids to insert a copy
@@ -451,6 +486,13 @@
     const tol = 10 / ppfNow();
     for (let i=state.elements.length-1;i>=0;i--) {
       if (belongsToActiveContainer(state.elements[i].containerId) && pointInElement(wp, state.elements[i])) return { kind:'element', id:state.elements[i].id };
+    }
+    for (let i=state.elementShapes.length-1;i>=0;i--) {
+      const sh = state.elementShapes[i];
+      if (!belongsToActiveContainer(sh.elementId)) continue;
+      if (sh.kind==='rect') {
+        if (wp.x>=Math.min(sh.x1,sh.x2) && wp.x<=Math.max(sh.x1,sh.x2) && wp.y>=Math.min(sh.y1,sh.y2) && wp.y<=Math.max(sh.y1,sh.y2)) return { kind:'shape', id:sh.id };
+      } else if (distToSeg(wp, {x:sh.x1,y:sh.y1}, {x:sh.x2,y:sh.y2}) < tol) return { kind:'shape', id:sh.id };
     }
     for (const wl of state.walls) {
       if (belongsToActiveContainer(wl.containerId) && distToSeg(wp, endPos(wl.a), endPos(wl.b)) < Math.max(tol, (wl.thickness||0.5)/2))
@@ -611,6 +653,10 @@
       if (!belongsToActiveContainer(g.boxId)) continue;
       const gp = gridPos(g);
       if (g.type==='v' ? (gp>=r.x1 && gp<=r.x2) : (gp>=r.y1 && gp<=r.y2)) items.push({kind:'grid', id:g.id});
+    }
+    for (const sh of state.elementShapes) {
+      if (!belongsToActiveContainer(sh.elementId)) continue;
+      if (overlaps(Math.min(sh.x1,sh.x2),Math.min(sh.y1,sh.y2),Math.max(sh.x1,sh.x2),Math.max(sh.y1,sh.y2))) items.push({kind:'shape', id:sh.id});
     }
     return items;
   }
@@ -844,6 +890,7 @@
     drawGridlines(w, h);
     drawDims();
     drawElements();       // elements (dimmed if outside the focus)
+    drawElementShapes();  // an open Element's own rects/lines/insertion point
     drawDimming();        // dim content outside open boundaries
     drawBoxes();          // boundary frames crisp on top of the dimming; selected/hover frontmost
     drawHoverHighlight(); // hovered/Tab-cycled container on the very top
@@ -884,7 +931,7 @@
   }
 
   // Per-kind boundary outline color (closed). Open boundaries are red for all.
-  const BOUNDARY_HUE = { product:217, unitplan:160, layout:292 };
+  const BOUNDARY_HUE = { product:217, unitplan:160, layout:292, element:38 };
   // Per-instance color: same base hue per kind, but sibling boxes vary in hue &
   // lightness so multiple layouts (or unit plans / products) are distinguishable.
   function boundaryColor(bx) {
@@ -1024,6 +1071,7 @@
   function elementType(el){ return ELEMENT_TYPES[el.type] || ELEMENT_TYPES.toilet; }
   // Tool ids for element placement are "element:<type>" (e.g. "element:table").
   function isElementTool(tool){ return tool.indexOf('element')===0; }
+  function isShapeTool(tool){ return tool.indexOf('shape:')===0; }
   function currentElementType(){ return isElementTool(state.tool) ? state.tool.slice(8) : 'toilet'; }
   // Local geometry (insertion at origin, footprint extends +y), rotated by el.rot.
   function elementCorners(el) {
@@ -1063,6 +1111,38 @@
       ctx.strokeStyle='#e6e9ef'; ctx.lineWidth=1; ctx.stroke();
     }
   }
+  // An Element's own authored content: grey rounded rects and lines, plus
+  // the single red crosshair marking its insertion point (where it anchors
+  // once placed into a Layout).
+  function drawElementShapes(){
+    const visible = visibleBoxIds();
+    const multiIds = new Set(state.multiSelection.filter(s=>s.kind==='shape').map(s=>s.id));
+    for (const sh of state.elementShapes) {
+      if (!visible.has(sh.elementId)) continue;
+      const sel = (state.selection && state.selection.kind==='shape' && state.selection.id===sh.id) || multiIds.has(sh.id);
+      const p1 = w2s({x:sh.x1,y:sh.y1}), p2 = w2s({x:sh.x2,y:sh.y2});
+      if (sh.kind==='rect') {
+        const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y), w=Math.abs(p2.x-p1.x), h=Math.abs(p2.y-p1.y);
+        roundRectPath(ctx, x, y, w, h, Math.min(10, Math.min(w,h)/4));
+        ctx.fillStyle = sel ? '#8a94a3' : '#6b7280';
+        ctx.fill();
+        if (sel) { ctx.strokeStyle='#4c9aff'; ctx.lineWidth=2; ctx.stroke(); }
+      } else {
+        ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
+        ctx.strokeStyle = sel ? '#4c9aff' : '#c2c8d2';
+        ctx.lineWidth = sel ? 2.4 : 1.6;
+        ctx.stroke();
+      }
+    }
+    for (const id of visible) {
+      const bx = findById(state.boxes, id);
+      if (!bx || bx.kind!=='element' || !bx.insertionPoint) continue;
+      const p = w2s(bx.insertionPoint);
+      ctx.strokeStyle='#ff5c5c'; ctx.fillStyle='#ff5c5c'; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(p.x-6,p.y); ctx.lineTo(p.x+6,p.y); ctx.moveTo(p.x,p.y-6); ctx.lineTo(p.x,p.y+6); ctx.stroke();
+      ctx.beginPath(); ctx.arc(p.x,p.y,2.5,0,Math.PI*2); ctx.fill();
+    }
+  }
   function pointInElement(wp, el) {
     const c = elementCorners(el);
     let inside=false;
@@ -1082,6 +1162,17 @@
     const ac = activeContainer();
     state.elements.push({ id, type, containerId: ac?ac.id:null, ref:{ x:a.x, y:a.y, xRef:a.xRef, yRef:a.yRef }, rot:0 });
     state.selection = { kind:'element', id };
+    refreshTray();
+  }
+  // Place (or move) the one insertion point an Element (in the Element
+  // Editor) has — where it anchors when the finished symbol gets placed
+  // into a Layout. A second click just relocates the same single point.
+  function placeInsertionPoint(wp){
+    const ac = activeContainer();
+    if (!ac || ac.kind!=='element') return;
+    const p = state.snap ? snapWorld(wp) : wp;
+    ac.insertionPoint = { x:p.x, y:p.y };
+    state.selection = { kind:'box', id:ac.id };
     refreshTray();
   }
 
@@ -1428,6 +1519,10 @@
     } else if (state.tool === 'wall6' || state.tool === 'wall12') {
       const ep = wallSnap(wp);
       drag = { kind:'wall', a: ep, b: {...ep}, thickness: WALL_THK[state.tool] };
+    } else if (state.tool === 'shape:rect' || state.tool === 'shape:line') {
+      drag = { kind:'shape', shapeKind: state.tool==='shape:rect'?'rect':'line', x1:snapped.x, y1:snapped.y, x2:snapped.x, y2:snapped.y };
+    } else if (state.tool === 'shape:point') {
+      placeInsertionPoint(wp);
     } else if (state.tool === 'dim' || state.tool === 'lockdim' || state.tool === 'eqdim' || state.tool === 'flexdim') {
       // Click picks a reference (grid line or box edge). Build a chain; Enter commits.
       const pick = pickReference(wp, dimBuild ? dimBuild.axis : null);
@@ -1454,6 +1549,7 @@
     if (drag) {
       if (drag.kind === 'wall') drag.b = wallSnap(mouseWRaw);
       else if (drag.kind === 'box') { drag.x2 = mouseW.x; drag.y2 = mouseW.y; }
+      else if (drag.kind === 'shape') { drag.x2 = mouseW.x; drag.y2 = mouseW.y; }
       else if (drag.kind === 'resizeBox') resizeBox(drag, mouseW);
       else if (drag.kind === 'move') doMove(drag, mouseW);
       else if (drag.kind === 'marquee') { drag.x2 = mouseWRaw.x; drag.y2 = mouseWRaw.y; }
@@ -1517,6 +1613,20 @@
         const ac=activeContainer();
         state.walls.push({ id, a:{...drag.a}, b:{...drag.b}, thickness: drag.thickness, containerId: ac?ac.id:null });
         state.selection={kind:'wall',id};
+      }
+    } else if (drag.kind === 'shape') {
+      const dx=drag.x2-drag.x1, dy=drag.y2-drag.y1;
+      // a rect needs real extent on both axes; a line just needs SOME length
+      // (it can be purely horizontal or vertical)
+      const bigEnough = drag.shapeKind==='rect' ? (Math.abs(dx)>0.05 && Math.abs(dy)>0.05) : (Math.abs(dx)>0.05 || Math.abs(dy)>0.05);
+      const ac = activeContainer();
+      if (bigEnough && ac && ac.kind==='element') {
+        const id=uid();
+        const shape = drag.shapeKind==='rect'
+          ? { id, elementId:ac.id, kind:'rect', x1:Math.min(drag.x1,drag.x2), y1:Math.min(drag.y1,drag.y2), x2:Math.max(drag.x1,drag.x2), y2:Math.max(drag.y1,drag.y2) }
+          : { id, elementId:ac.id, kind:'line', x1:drag.x1, y1:drag.y1, x2:drag.x2, y2:drag.y2 };
+        state.elementShapes.push(shape);
+        state.selection={kind:'shape',id};
       }
     }
     drag=null;
@@ -1664,6 +1774,19 @@
       ctx.fillStyle='rgba(76,154,255,.12)'; ctx.fillRect(x,y,ww,hh);
       ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
       ctx.strokeRect(x,y,ww,hh); ctx.setLineDash([]);
+    } else if (drag.kind === 'shape') {
+      const p1=w2s({x:drag.x1,y:drag.y1}), p2=w2s({x:drag.x2,y:drag.y2});
+      if (drag.shapeKind==='rect') {
+        const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y), ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
+        roundRectPath(ctx, x, y, ww, hh, Math.min(10, Math.min(ww,hh)/4));
+        ctx.fillStyle='rgba(107,114,128,.7)'; ctx.fill();
+        ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1.2; ctx.stroke();
+        labelAt(p2, `${fmtFeet(Math.abs(drag.x2-drag.x1))} × ${fmtFeet(Math.abs(drag.y2-drag.y1))}`);
+      } else {
+        ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
+        ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1.8; ctx.stroke();
+        labelAt(p2, fmtFeet(Math.hypot(drag.x2-drag.x1, drag.y2-drag.y1)));
+      }
     }
     drawCursorMarker();
   }
@@ -1715,6 +1838,7 @@
     if(hit.kind==='grid')return findById(state.gridlines,hit.id);
     if(hit.kind==='box')return findById(state.boxes,hit.id);
     if(hit.kind==='element')return findById(state.elements,hit.id);
+    if(hit.kind==='shape')return findById(state.elementShapes,hit.id);
   }
   function doMove(drag, cur){
     const d = { x: cur.x-drag.start.x, y: cur.y-drag.start.y };
@@ -1747,6 +1871,9 @@
     } else if(drag.hit.kind==='element'){
       if(!drag.baked){ bakeWallEnd(ent.ref); drag.baked=true; }
       ent.ref.x=drag.startP.x+d.x; ent.ref.y=drag.startP.y+d.y;
+    } else if(drag.hit.kind==='shape'){
+      // plain coordinates, no anchoring to bake — just slide both endpoints
+      ent.x1=o.x1+d.x; ent.x2=o.x2+d.x; ent.y1=o.y1+d.y; ent.y2=o.y2+d.y;
     }
   }
 
@@ -1922,6 +2049,24 @@
       c.beginPath(); c.moveTo(SX(ep[0].x),SY(ep[0].y)); c.lineTo(SX(ep[1].x),SY(ep[1].y)); c.stroke();
     }
     c.setLineDash([]);
+    // an Element's own shapes + insertion point (nothing to show for any
+    // other kind, since ownership is by elementId, never anyone else's id)
+    for (const sh of state.elementShapes) {
+      if (!owned(sh.elementId)) continue;
+      const p1x=SX(sh.x1),p1y=SY(sh.y1),p2x=SX(sh.x2),p2y=SY(sh.y2);
+      if (sh.kind==='rect') {
+        const x=Math.min(p1x,p2x), y=Math.min(p1y,p2y), ww=Math.abs(p2x-p1x), hh=Math.abs(p2y-p1y);
+        roundRectPath(c, x, y, ww, hh, Math.min(4, Math.min(ww,hh)/4));
+        c.fillStyle='#6b7280'; c.fill();
+      } else {
+        c.strokeStyle='#c2c8d2'; c.lineWidth=1; c.beginPath(); c.moveTo(p1x,p1y); c.lineTo(p2x,p2y); c.stroke();
+      }
+    }
+    if (box.kind==='element' && box.insertionPoint) {
+      const p=SX(box.insertionPoint.x), q=SY(box.insertionPoint.y);
+      c.strokeStyle='#ff5c5c'; c.lineWidth=1;
+      c.beginPath(); c.moveTo(p-3,q); c.lineTo(p+3,q); c.moveTo(p,q-3); c.lineTo(p,q+3); c.stroke();
+    }
   }
   // Resolve a ref/endpoint against a frozen snapshot's own boxes/grids
   // (collectSubtreeFull's output) instead of live state — used to preview a
@@ -2000,6 +2145,21 @@
       c.beginPath(); c.moveTo(SX(p1.x),SY(p1.y)); c.lineTo(SX(p2.x),SY(p2.y)); c.stroke();
     }
     c.setLineDash([]);
+    for (const sh of (snapshot.shapes||[])) {
+      const p1x=SX(sh.x1),p1y=SY(sh.y1),p2x=SX(sh.x2),p2y=SY(sh.y2);
+      if (sh.kind==='rect') {
+        const x=Math.min(p1x,p2x), y=Math.min(p1y,p2y), ww=Math.abs(p2x-p1x), hh=Math.abs(p2y-p1y);
+        roundRectPath(c, x, y, ww, hh, Math.min(4, Math.min(ww,hh)/4));
+        c.fillStyle='#6b7280'; c.fill();
+      } else {
+        c.strokeStyle='#c2c8d2'; c.lineWidth=1; c.beginPath(); c.moveTo(p1x,p1y); c.lineTo(p2x,p2y); c.stroke();
+      }
+    }
+    if (root.kind==='element' && root.insertionPoint) {
+      const p=SX(root.insertionPoint.x), q=SY(root.insertionPoint.y);
+      c.strokeStyle='#ff5c5c'; c.lineWidth=1;
+      c.beginPath(); c.moveTo(p-3,q); c.lineTo(p+3,q); c.moveTo(p,q-3); c.lineTo(p,q+3); c.stroke();
+    }
   }
   // ---- Local persistence -----------------------------------------------------
   // Everything lives in one browser-local save file (grids/walls/dims all
@@ -2012,6 +2172,7 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         nextId, boxes: state.boxes, gridlines: state.gridlines, walls: state.walls,
         elements: state.elements, dims: state.dims, archived: state.archived,
+        elementShapes: state.elementShapes, editorMode: state.editorMode,
       }));
       return true;
     } catch(e) { return false; } // storage unavailable (private mode, disabled, quota) — no-op
@@ -2027,6 +2188,8 @@
       if (data.elements) state.elements = data.elements;
       if (data.dims) state.dims = data.dims;
       if (data.archived) state.archived = data.archived;
+      if (data.elementShapes) state.elementShapes = data.elementShapes;
+      if (typeof data.editorMode === 'string') state.editorMode = data.editorMode;
       if (typeof data.nextId === 'number') nextId = data.nextId;
     } catch(e) { /* corrupt or unavailable — start blank */ }
   }
@@ -2050,7 +2213,7 @@
   // ones get a numbered default (per kind, via KIND_LABEL below) so the
   // field is never blank.
   function ensureBoxNames(){
-    const n = { product:0, unitplan:0, layout:0 };
+    const n = { product:0, unitplan:0, layout:0, element:0 };
     for (const b of state.boxes) {
       if (!(b.kind in n) || b.isInstance) continue; // instances aren't listed, so don't consume a number
       n[b.kind]++;
@@ -2110,7 +2273,15 @@
   // generations of "branch of a branch" removed — branches always store the
   // very first original's id, so this is a flat one-level grouping, never a
   // deeper tree.
-  function buildLibraryGroups(kind){
+  // `parentId`, when given (including explicitly null for "standalone/top-
+  // level only"), restricts which FAMILIES show up to ones whose ROOT lives
+  // there — a branch is never excluded by this (it's just wherever it got
+  // inserted, unrelated to where its family is browsed from), and an
+  // archived root always passes (archived entries never recorded a parent).
+  // Omit `parentId` entirely to see every family regardless of the root's
+  // parent — used when a specific root's id is already known (the Branches/
+  // Versions tray) and its neighborhood doesn't matter anymore.
+  function buildLibraryGroups(kind, parentId){
     const byId = new Map();
     for (const b of state.boxes) if (b.kind===kind && !b.isInstance) byId.set(b.id, {live:true, obj:b});
     for (const a of state.archived) if (a.kind===kind) byId.set(a.id, {live:false, obj:a});
@@ -2121,7 +2292,8 @@
       if (rid==null || !byId.has(rid)) groupFor(entry.obj.id).root = entry; // no root, or a dangling one — stands alone
       else groupFor(rid).branches.push(entry);
     }
-    const list = [...groups.values()].filter(g=>g.root);
+    let list = [...groups.values()].filter(g=>g.root);
+    if (parentId !== undefined) list = list.filter(g => !g.root.live || g.root.obj.parentId === parentId);
     list.sort((a,b)=>{
       const ao=a.root.live&&a.root.obj.open, bo=b.root.live&&b.root.obj.open;
       if (ao!==bo) return ao?-1:1;
@@ -2138,25 +2310,50 @@
     else { state.branchRootId=id; state.branchRootKind=kind; }
     refreshTray();
   }
+  // The parentId that "belongs here" for whichever kind's Library section is
+  // currently relevant: null at the top level (nothing open, or a
+  // standalone file of that kind is open — either way, siblings are every
+  // other top-level file of the kind) or the open container's own id when
+  // browsing what's nested inside it (e.g. Unit Plans inside an open
+  // Product). Products are always top-level, so this is always null there.
+  function currentLibraryParentId(){
+    const active = activeContainer();
+    return active ? active.parentId : null;
+  }
   // Render one kind's whole tray: one card per family's root — its branches
   // (if any) live in the separate Branches tray, opened by clicking it.
   // Products are the exception: they never branch, so clicking one instead
   // opens it straight on the drafting canvas, and it never shows the
   // Branches tray or the persistent blue "selected" highlight.
   function buildKindList(kind, listEl){
-    const groups = buildLibraryGroups(kind);
+    const parentId = currentLibraryParentId();
+    const groups = buildLibraryGroups(kind, parentId);
     listEl.innerHTML='';
-    if (kind==='product') {
+    if (parentId==null) {
       const add=document.createElement('div'); add.className='item add-new'; add.textContent='+';
-      add.title='New Product';
-      add.addEventListener('click', createNewProduct);
+      add.title='New '+KIND_LABEL[kind];
+      add.addEventListener('click', ()=>createNewRoot(kind));
       listEl.appendChild(add);
     }
+    // A standalone file (parentId null — this IS the top-level, isolated-
+    // canvas context for this kind) has no other way to be opened: unlike a
+    // Unit Plan/Layout nested inside a Product, which you reach by opening
+    // it right there on the canvas, there's nothing else visible to open it
+    // from. So here, like a Product, clicking opens it — the Branches tray
+    // (if it has any) shows alongside, rather than instead of, opening it.
+    const standalone = parentId==null;
     for (const g of groups) {
       const hasBranches = kind!=='product' && g.branches.length>0;
       const onClick = kind==='product'
         ? (g.root.live ? ()=>{ openWithAncestors(g.root.obj); centerViewOnBox(g.root.obj, 10); draw(); } : null)
-        : (hasBranches ? ()=>selectBranchRoot(kind, g.root.obj.id) : null);
+        : (standalone && g.root.live)
+          ? ()=>{
+              openWithAncestors(g.root.obj);
+              centerViewOnBox(g.root.obj, NEW_ROOT_SIZE[kind].margin);
+              if (hasBranches) { state.branchRootId=g.root.obj.id; state.branchRootKind=kind; refreshBranchesTray(); }
+              draw();
+            }
+          : (hasBranches ? ()=>selectBranchRoot(kind, g.root.obj.id) : null);
       const card = buildLibraryItem(kind, g.root, onClick, hasBranches);
       if (hasBranches && state.branchRootId===g.root.obj.id) card.classList.add('lib-selected');
       listEl.appendChild(card);
@@ -2168,6 +2365,8 @@
   function buildUnitplansList(){ buildKindList('unitplan', unitplansListEl); }
   const layoutsListEl=document.getElementById('layoutsList');
   function buildLayoutsList(){ buildKindList('layout', layoutsListEl); }
+  const elementsListEl=document.getElementById('elementsList');
+  function buildElementsList(){ buildKindList('element', elementsListEl); }
   // The second tray to the right of the Library, showing whichever root's
   // branches were last clicked — stays open (even empty) until you close it
   // or click another root, and hides itself if the Library isn't showing.
@@ -2196,14 +2395,15 @@
   // Only the section matching what you currently have open is shown — the
   // rest hide, so the Library always tracks the level you're working at.
   function updateTrayVisibility(){
-    const kind = (activeContainer()||{}).kind || 'product';
+    const kind = (activeContainer()||{}).kind || state.editorMode;
     productsListEl.hidden = kind!=='product';
     unitplansListEl.hidden = kind!=='unitplan';
     layoutsListEl.hidden = kind!=='layout';
+    elementsListEl.hidden = kind!=='element';
   }
   function refreshTray(){
     ensureBoxNames();
-    buildProductsList(); buildUnitplansList(); buildLayoutsList();
+    buildProductsList(); buildUnitplansList(); buildLayoutsList(); buildElementsList();
     updateTrayVisibility();
     buildInsertList();
     refreshBranchesTray();
@@ -2226,7 +2426,9 @@
     const canBranch = bx.kind!=='product';
     const saveToMainItem = { label:'Close and save to main', sc:'', disabled:lockedOpen, act:()=>{ saveToMain(bx.id); closeBoundary(bx); } };
     const closeItems = !bx.open
-      ? [{ label:'Open', sc:'', disabled:lockedOpen, act:()=>openWithAncestors(bx) }]
+      ? [{ label:'Open', sc:'', disabled:lockedOpen || !canOpenBox(bx),
+           title: canOpenBox(bx) ? '' : "Placed in a Unit Plan Editor file — can't be opened, only moved or deleted",
+           act:()=>openWithAncestors(bx) }]
       : bx.masterId!=null
         ? (canBranch
             ? [ saveToMainItem, { label:'Close and create branch', sc:'', disabled:lockedOpen, act:()=>{ saveAsBranch(bx.id); closeBoundary(bx); } } ]
@@ -2247,6 +2449,7 @@
       const el=document.createElement('div');
       el.className='item'+(it.danger?' danger':'');
       if (it.disabled){ el.style.opacity=.4; el.style.pointerEvents='none'; }
+      if (it.title) el.title = it.title;
       el.innerHTML=`<span>${it.label}</span><span class="sc">${it.sc||''}</span>`;
       el.addEventListener('click', ()=>{ it.act(); hideBoxMenu(); draw(); });
       menuEl.appendChild(el);
@@ -2380,7 +2583,12 @@
     const walls = state.walls.filter(wl=>owns(wl.containerId)).map(wl=>JSON.parse(JSON.stringify(wl)));
     const elements = state.elements.filter(el=>owns(el.containerId)).map(el=>JSON.parse(JSON.stringify(el)));
     const dims = state.dims.filter(d=>owns(d.containerId)).map(d=>JSON.parse(JSON.stringify(d)));
-    return { boxes, grids, walls, elements, dims };
+    // An Element's own authored shapes — owned the same way (by elementId,
+    // which is just its containerId equivalent). Its insertionPoint rides
+    // along for free: it's a plain field on the box itself, already part of
+    // the deep-cloned `boxes` above.
+    const shapes = state.elementShapes.filter(sh=>owns(sh.elementId)).map(sh=>JSON.parse(JSON.stringify(sh)));
+    return { boxes, grids, walls, elements, dims, shapes };
   }
   // Begin picking 4 reference edges to place a copy of `id` (a Unit Plan or
   // Layout living anywhere in the document) into the currently open container.
@@ -2453,6 +2661,7 @@
       state.walls = state.walls.filter(w=>!ownedIds.has(w.containerId));
       state.elements = state.elements.filter(el=>!ownedIds.has(el.containerId));
       state.dims = state.dims.filter(d=>!ownedIds.has(d.containerId));
+      state.elementShapes = state.elementShapes.filter(sh=>!ownedIds.has(sh.elementId));
     }
 
     const idMap = new Map();
@@ -2480,6 +2689,7 @@
       // let you keep chaining copies-of-copies-of-the-same-thing)
       b.isInstance = true;
       if (b.kind==='product'||b.kind==='unitplan'||b.kind==='layout') b.name=null;
+      if (b.insertionPoint) b.insertionPoint = { x: fx(b.insertionPoint.x), y: fy(b.insertionPoint.y) };
     });
     data.grids.forEach(g=>{ g.id=idMap.get(g.id); g.boxId=remap(g.boxId); });
 
@@ -2553,6 +2763,14 @@
       el.ref=remapEndpoint(el.ref);
       el.containerId=remap(el.containerId) ?? rootId;
     });
+    // An Element's own authored shapes — plain coordinates, no ref-based
+    // anchoring, so just rescale like any other box coordinate.
+    const shapes = (data.shapes||[]).map(sh=>({
+      id: uid(),
+      elementId: remap(sh.elementId) ?? rootId,
+      kind: sh.kind,
+      x1: fx(sh.x1), y1: fy(sh.y1), x2: fx(sh.x2), y2: fy(sh.y2),
+    }));
     // Dimensions: remap their references the same way (a ref to something
     // outside the copied subtree — e.g. a dim inside a Layout that measures
     // to the enclosing Unit Plan's own edge — just gets dropped, same as
@@ -2586,6 +2804,7 @@
     state.walls.push(...data.walls);
     state.elements.push(...data.elements);
     state.dims.push(...data.dims);
+    state.elementShapes.push(...shapes);
     // Every non-root box in the subtree (e.g. a Layout nested inside an
     // inserted Unit Plan) still needs its edges locked to ITS host's grids/
     // edges, exactly like a normally-drawn nested boundary — the wholesale
@@ -2653,7 +2872,9 @@
   }
   function buildInsertList(){
     if (insertPanelEl.hidden) return;
-    const kind = drawableBoundaryKind();
+    // What's insertable can differ from what's drawable (a standalone Unit
+    // Plan can't draw a fresh Layout, but can still place an existing one).
+    const kind = insertableBoundaryKind();
     insertTitleEl.textContent = kind ? `Insert: ${KIND_LABEL[kind]}` : 'Insert';
     insertListEl.innerHTML = '';
     if (!kind) {
@@ -2661,7 +2882,13 @@
       refreshInsertBranchesTray();
       return;
     }
-    for (const g of buildLibraryGroups(kind)) {
+    // Inserting into a STANDALONE container only offers other standalone
+    // files of the target kind (e.g. a standalone Unit Plan only offers
+    // standalone Layouts, ones actually authored in the Layout Editor) —
+    // inserting into a NESTED container (Product Editor's own unchanged
+    // flow) stays unscoped, exactly as it's always behaved.
+    const insertParentId = activeContainer().parentId==null ? null : undefined;
+    for (const g of buildLibraryGroups(kind, insertParentId)) {
       const hasBranches = g.branches.length>0;
       const onClick = hasBranches ? ()=>selectInsertBranchRoot(kind, g.root.obj.id) : ()=>startInsert(g.root.obj.id);
       const card = buildInsertCard(kind, g.root, onClick, hasBranches);
@@ -2719,6 +2946,9 @@
     if (['product','unitplan','layout'].includes(name) && name!==drawableBoundaryKind()) return;
     // elements are only placeable while a Layout is open
     if (isElementTool(name) && (activeContainer()||{}).kind!=='layout') return;
+    // shape tools (Element Editor's own rect/line/insertion-point) are only
+    // usable while an Element is open
+    if (isShapeTool(name) && (activeContainer()||{}).kind!=='element') return;
     state.tool=name; drag=null; dimBuild=null; hoverList=[]; hoverIdx=0;
     toolbar.querySelectorAll('.tool[data-tool]').forEach(c=>c.classList.toggle('active', c.dataset.tool===name));
     updateCursor();
@@ -2738,12 +2968,14 @@
     }
     return active;
   }
-  // Each Product behaves like its own isolated CAD file: at most one is
-  // ever open at a time (openProductExclusive enforces that), and nothing
-  // belonging to any OTHER Product draws or responds to input while one
-  // is open — you don't see other files' content by panning/zooming out.
-  function currentProduct(){
-    return state.boxes.find(b=>b.kind==='product' && b.open) || null;
+  // Every top-level boundary (Product, or now a standalone Unit Plan,
+  // Layout, or Element) behaves like its own isolated CAD file: at most one
+  // is ever open at a time (openWithAncestors enforces that by closing every
+  // other top-level box first), and nothing belonging to any OTHER one
+  // draws or responds to input while it's open — you don't see other
+  // files' content by panning/zooming out.
+  function currentRootBox(){
+    return state.boxes.find(b=>b.parentId==null && b.open) || null;
   }
   // `rootId` plus every descendant, however deep.
   function subtreeIds(rootId){
@@ -2752,28 +2984,64 @@
     visit(rootId);
     return ids;
   }
-  // Every box id belonging to the currently open Product — empty if none is
-  // open. The single source of truth for what's drawable/interactable right
-  // now; everything else is filtered out of every draw and hit-test loop.
-  function visibleBoxIds(){
-    const p = currentProduct();
-    return p ? subtreeIds(p.id) : new Set();
+  // Close a whole subtree's `open` flags, not just the root's own — a box
+  // can still count as "open" for activeContainer()'s purposes even once
+  // its ancestor is closed (depth is measured by parent-chain length, not
+  // by whether every ancestor is itself open), so closing only the root
+  // would leave a deeper box silently still "active".
+  function closeSubtree(rootId){
+    for (const id of subtreeIds(rootId)) { const b=findById(state.boxes,id); if (b) b.open=false; }
   }
-  // Products aren't drawn or inserted at all — the only way to get one is
-  // the Library's "+ New Product" button — so with nothing open there's
-  // nothing drawable/insertable yet (null), not 'product'.
+  // Every box id belonging to the currently open top-level file — empty if
+  // none is open. The single source of truth for what's drawable/
+  // interactable right now; everything else is filtered out of every draw
+  // and hit-test loop.
+  function visibleBoxIds(){
+    const r = currentRootBox();
+    return r ? subtreeIds(r.id) : new Set();
+  }
+  // Products (and, at the top level, standalone Unit Plans/Layouts/Elements
+  // too) aren't drawn or inserted at all — the only way to get one is the
+  // Library's "+" button — so with nothing open there's nothing
+  // drawable/insertable yet (null).
+  // A standalone Unit Plan (the Unit Plan Editor's own file, parentId
+  // null) can only ever have Layouts PLACED into it, never drawn fresh —
+  // that's Layout Editor's job — so it offers nothing to draw, unlike a
+  // Unit Plan nested inside an open Product (Product Editor's unchanged
+  // flow), which still lets you draw a new Layout straight into it.
   function drawableBoundaryKind(){
     const active = activeContainer();
-    const child = { product:'unitplan', unitplan:'layout', layout:null };
-    return active ? child[active.kind] : null;
+    if (!active) return null;
+    if (active.kind==='unitplan') return active.parentId==null ? null : 'layout';
+    const child = { product:'unitplan', layout:null, element:null };
+    return child[active.kind] ?? null;
+  }
+  // What CAN be inserted into the active container — separate from what
+  // can be DRAWN there, since a standalone Unit Plan allows placing an
+  // existing Layout even though it can't draw a brand-new one.
+  function insertableBoundaryKind(){
+    const active = activeContainer();
+    if (!active) return null;
+    const child = { product:'unitplan', unitplan:'layout', layout:null, element:null };
+    return child[active.kind] ?? null;
+  }
+  // A Layout living inside a STANDALONE Unit Plan (i.e. placed there while
+  // working in the Unit Plan Editor) can't be opened/edited — only placed —
+  // so its own internals stay whatever they were when it was inserted. A
+  // Layout nested inside a Product's Unit Plan (Product Editor's unchanged
+  // flow) opens exactly as it always has. Every other kind is unaffected.
+  function canOpenBox(bx){
+    if (bx.kind!=='layout' || bx.parentId==null) return true;
+    const parent = findById(state.boxes, bx.parentId);
+    return !parent || parent.parentId != null;
   }
   // The tray's title tracks whatever boundary you currently have open —
   // "Library" alone when nothing is open.
-  const KIND_LABEL = { product:'Product', unitplan:'Unit Plan', layout:'Layout' };
+  const KIND_LABEL = { product:'Product', unitplan:'Unit Plan', layout:'Layout', element:'Element' };
   const libraryTitleEl = document.getElementById('libraryTitle');
   function updateLibraryTitle(){
     const active = activeContainer();
-    libraryTitleEl.textContent = active ? `Library: ${KIND_LABEL[active.kind]}` : 'Library';
+    libraryTitleEl.textContent = `Library: ${KIND_LABEL[active ? active.kind : state.editorMode]}`;
   }
   // Center the view on a box at a comfortable zoom, with a margin so its
   // edges aren't flush against the window — used whenever opening a
@@ -2789,20 +3057,31 @@
     state.view.x = cv.clientWidth/2 - cx*ppfNow();
     state.view.y = cv.clientHeight/2 - cy*ppfNow();
   }
-  // "+ New Product": the only way to create one now (no draw tool, no
-  // Insert) — drops a fresh, already-open Product in clear space to the
-  // right of any existing top-level Products (or at the origin if this is
-  // the first one) and centers the view on it, ready to work in.
-  function createNewProduct(){
-    const W = 60, H = 40; // feet — a reasonable size to start from, freely resizable after
-    const existing = state.boxes.filter(b=>b.kind==='product');
+  // Default footprint (feet) for a freshly created standalone file, and how
+  // much margin to leave around it when the view centers on it — an
+  // Element is furniture-scale, so it gets a much smaller default/margin
+  // than a Product.
+  const NEW_ROOT_SIZE = {
+    product:  { w:60, h:40, margin:10 },
+    unitplan: { w:40, h:30, margin:10 },
+    layout:   { w:24, h:18, margin:8 },
+    element:  { w:4,  h:4,  margin:3 },
+  };
+  // "+ New <kind>": the only way to create a standalone top-level file of
+  // that kind (no draw tool, no Insert for it) — drops a fresh,
+  // already-open one in clear space to the right of any existing
+  // standalone files of the same kind (or at the origin if it's the
+  // first) and centers the view on it, ready to work in.
+  function createNewRoot(kind){
+    const { w:W, h:H, margin } = NEW_ROOT_SIZE[kind];
+    const existing = state.boxes.filter(b=>b.kind===kind && b.parentId==null);
     const x1 = existing.length ? Math.max(...existing.map(b=>boxExt(b).x2)) + 10 : 0;
     const id = uid();
-    const bx = { id, kind:'product', name:null, x1, y1:0, x2:x1+W, y2:H, parentId:null, open:false, bind:{x1:null,y1:null,x2:null,y2:null} };
+    const bx = { id, kind, name:null, x1, y1:0, x2:x1+W, y2:H, parentId:null, open:false, bind:{x1:null,y1:null,x2:null,y2:null} };
     state.boxes.push(bx);
     state.selection = { kind:'box', id };
-    openWithAncestors(bx); // closes any other open Product, since each is its own isolated file
-    centerViewOnBox(bx, 10);
+    openWithAncestors(bx); // closes any other open top-level file, since each is its own isolated one
+    centerViewOnBox(bx, margin);
     saveStateToStorage();
     draw();
   }
@@ -2810,13 +3089,15 @@
   // (you then close them from the inside out).
   // Opening/closing a boundary changes which Library section is visible and
   // which item sorts to the top, so both refresh the tray.
-  // Each Product is its own isolated "file" — opening anything closes every
-  // OTHER top-level Product first, so at most one is ever open at a time
-  // and nothing from a different Product stays visible underneath it.
+  // Every top-level boundary (Product, or a standalone Unit Plan, Layout,
+  // Element) is its own isolated "file" — opening anything closes every
+  // OTHER top-level box first, regardless of kind, so at most one is ever
+  // open at a time and nothing from a different file stays visible
+  // underneath it.
   function openWithAncestors(bx){
     let root = bx;
     while (root.parentId != null) { const p = findById(state.boxes, root.parentId); if (!p) break; root = p; }
-    for (const p of state.boxes) if (p.kind==='product' && p.id!==root.id) p.open = false;
+    for (const p of state.boxes) if (p.parentId==null && p.id!==root.id) closeSubtree(p.id);
     bx.open = true;
     let p = bx.parentId;
     while (p != null) { const pb = findById(state.boxes, p); if (!pb) break; pb.open = true; p = pb.parentId; }
@@ -2921,9 +3202,14 @@
     elementToggleEl.classList.toggle('disabled', !layoutOpen);
     if (!layoutOpen) { elementSubToolsEl.hidden = true; elementToggleEl.classList.remove('active'); }
     else if (isElementTool(state.tool)) { elementSubToolsEl.hidden = false; elementToggleEl.classList.add('active'); }
+    // Element Editor's own rect/line/insertion-point tools — usable only
+    // while an Element is the open (deepest) container.
+    const elementOpen = (activeContainer()||{}).kind === 'element';
+    toolbar.querySelectorAll('#elementEditorToolset .tool[data-tool]').forEach(c=>c.classList.toggle('disabled', !elementOpen));
     // if the active tool just became unavailable, fall back to select
     const toolNowInvalid = (['product','unitplan','layout'].includes(state.tool) && state.tool!==drawable)
-      || (isElementTool(state.tool) && !layoutOpen);
+      || (isElementTool(state.tool) && !layoutOpen)
+      || (isShapeTool(state.tool) && !elementOpen);
     if (toolNowInvalid) {
       state.tool='select';
       toolbar.querySelectorAll('.tool[data-tool]').forEach(c=>c.classList.toggle('active', c.dataset.tool==='select'));
@@ -2938,6 +3224,32 @@
   document.getElementById('showProductDims').addEventListener('change', e=>{ state.showDims.product=e.target.checked; draw(); });
   document.getElementById('showUnitplanDims').addEventListener('change', e=>{ state.showDims.unitplan=e.target.checked; draw(); });
   document.getElementById('showLayoutDims').addEventListener('change', e=>{ state.showDims.layout=e.target.checked; draw(); });
+
+  // The header dropdown swaps which kind of standalone file the top-level
+  // Library, "+", and toolbar are pointed at. Switching modes closes
+  // whatever's currently open if it's a different kind (the canvas goes
+  // blank until you open or create one of the new mode's own files).
+  const editorModeSelectEl = document.getElementById('editorModeSelect');
+  const boundaryToolsetEl = document.getElementById('boundaryToolset');
+  const elementEditorToolsetEl = document.getElementById('elementEditorToolset');
+  function updateToolsetVisibility(){
+    const isElementMode = state.editorMode==='element';
+    boundaryToolsetEl.hidden = isElementMode;
+    elementEditorToolsetEl.hidden = !isElementMode;
+  }
+  editorModeSelectEl.addEventListener('change', e=>{
+    state.editorMode = e.target.value;
+    const root = currentRootBox();
+    if (root && root.kind !== state.editorMode) closeSubtree(root.id);
+    state.selection = null; state.multiSelection = [];
+    state.branchRootId = null; state.branchRootKind = null;
+    state.insertBranchRootId = null; state.insertBranchRootKind = null;
+    setSidePanel('library');
+    updateToolsetVisibility();
+    refreshTray();
+    saveStateToStorage();
+    draw();
+  });
 
   // Freeze every wall endpoint at its current resolved position. Call before
   // removing grids/boxes so anchored walls stay put instead of jumping back.
@@ -2976,11 +3288,13 @@
     state.walls = state.walls.filter(w=>!boxIds.has(w.containerId));
     state.elements = state.elements.filter(el=>!boxIds.has(el.containerId));
     state.dims = state.dims.filter(d=>!boxIds.has(d.containerId));
+    state.elementShapes = state.elementShapes.filter(sh=>!boxIds.has(sh.elementId));
     relabelGrid();
   }
   function deleteOne(s){
     if(s.kind==='wall')state.walls=state.walls.filter(w=>w.id!==s.id);
     if(s.kind==='element')state.elements=state.elements.filter(el=>el.id!==s.id);
+    if(s.kind==='shape')state.elementShapes=state.elementShapes.filter(sh=>sh.id!==s.id);
     if(s.kind==='dim')state.dims=state.dims.filter(d=>d.id!==s.id);
     if(s.kind==='grid'){
       bakeAllWallCoords();
@@ -3093,6 +3407,8 @@
     loadStateFromStorage(); // restore whatever was last explicitly saved, if anything
   }
   seed();
+  editorModeSelectEl.value = state.editorMode;
+  updateToolsetVisibility();
   refreshTray();
   resize();
   setTool('select');
