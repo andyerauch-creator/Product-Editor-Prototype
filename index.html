@@ -421,7 +421,10 @@
   function boxInteractable(box){
     const ac = activeContainer();
     const activeId = ac ? ac.id : null;
-    if (activeId===null) return box.kind==='product';
+    // nothing open means no Product is the current "file" — the canvas is
+    // blank, so nothing on it (there shouldn't be anything drawn anyway) is
+    // interactable; Products are only ever opened from the Library now.
+    if (activeId===null) return false;
     return box.parentId === activeId || box.id === activeId;
   }
   function hitTest(wp) {
@@ -883,7 +886,8 @@
     const active = activeContainer();
     const activeId = active ? active.id : null;
     const z = b => (b.id===hoverBoxId) ? 1001 : (b.id===selId||multiIds.has(b.id)) ? 1000 : (order[b.kind]??2);
-    const sorted = [...state.boxes].sort((a,b)=>z(a)-z(b));
+    const visible = visibleBoxIds();
+    const sorted = state.boxes.filter(b=>visible.has(b.id)).sort((a,b)=>z(a)-z(b));
     for (const bx of sorted) {
       const sel = bx.id===selId || multiIds.has(bx.id), hov = bx.id===hoverBoxId;
       const e = boxExt(bx);
@@ -1015,7 +1019,9 @@
     const ht = activeHover();
     const hoverElId = (ht && ht.kind==='element') ? ht.id : null;
     const multiIds = new Set(state.multiSelection.filter(s=>s.kind==='element').map(s=>s.id));
+    const visible = visibleBoxIds();
     for (const el of state.elements) {
+      if (!visible.has(el.containerId)) continue;
       const sel = (state.selection && state.selection.kind==='element' && state.selection.id===el.id) || multiIds.has(el.id);
       const hov = el.id===hoverElId;
       const P = w2s(endPos(el.ref));
@@ -1063,7 +1069,9 @@
     const ht = activeHover();
     const hoverGridId = (ht && ht.kind==='grid') ? ht.id : null;
     const multiIds = new Set(state.multiSelection.filter(s=>s.kind==='grid').map(s=>s.id));
+    const visible = visibleBoxIds();
     for (const g of state.gridlines) {
+      if (!visible.has(g.boxId)) continue;
       const sel = (state.selection && state.selection.kind==='grid' && state.selection.id===g.id) || multiIds.has(g.id);
       const hov = g.id===hoverGridId;
       const gbx = g.boxId!=null ? findById(state.boxes, g.boxId) : null;
@@ -1111,7 +1119,9 @@
 
   function drawWalls() {
     const T = 1.3; // outline thickness (px)
-    const rects = state.walls.map(wl=>{
+    const visible = visibleBoxIds();
+    const visWalls = state.walls.filter(wl=>visible.has(wl.containerId));
+    const rects = visWalls.map(wl=>{
       let aW=endPos(wl.a), bW=endPos(wl.b);
       const H=(wl.thickness||0.5)/2;                 // half-thickness in feet
       const dx=bW.x-aW.x, dy=bW.y-aW.y, L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L;
@@ -1142,7 +1152,7 @@
     ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.drawImage(offCanvas,0,0); ctx.restore();
     // selection highlight (drawn normally on top)
     const multiWallIds = new Set(state.multiSelection.filter(s=>s.kind==='wall').map(s=>s.id));
-    for (const wl of state.walls) {
+    for (const wl of visWalls) {
       const sel = (state.selection && state.selection.kind==='wall' && state.selection.id===wl.id) || multiWallIds.has(wl.id);
       if (sel) {
         const a=w2s(endPos(wl.a)), b=w2s(endPos(wl.b));
@@ -1193,7 +1203,9 @@
     return d.line;
   }
   function drawDims() {
+    const visible = visibleBoxIds();
     for (const d of state.dims) {
+      if (!visible.has(d.containerId)) continue;
       if (d.container && !state.showDims[d.container]) continue; // hidden by toggle
       drawDimSpec(d, false,
         state.selection && state.selection.kind==='dim' && state.selection.id===d.id, null);
@@ -2667,6 +2679,27 @@
     }
     return active;
   }
+  // Each Product behaves like its own isolated CAD file: at most one is
+  // ever open at a time (openProductExclusive enforces that), and nothing
+  // belonging to any OTHER Product draws or responds to input while one
+  // is open — you don't see other files' content by panning/zooming out.
+  function currentProduct(){
+    return state.boxes.find(b=>b.kind==='product' && b.open) || null;
+  }
+  // `rootId` plus every descendant, however deep.
+  function subtreeIds(rootId){
+    const ids = new Set();
+    const visit = id => { ids.add(id); for (const b of state.boxes) if (b.parentId===id) visit(b.id); };
+    visit(rootId);
+    return ids;
+  }
+  // Every box id belonging to the currently open Product — empty if none is
+  // open. The single source of truth for what's drawable/interactable right
+  // now; everything else is filtered out of every draw and hit-test loop.
+  function visibleBoxIds(){
+    const p = currentProduct();
+    return p ? subtreeIds(p.id) : new Set();
+  }
   // Products aren't drawn or inserted at all — the only way to get one is
   // the Library's "+ New Product" button — so with nothing open there's
   // nothing drawable/insertable yet (null), not 'product'.
@@ -2692,15 +2725,15 @@
     const existing = state.boxes.filter(b=>b.kind==='product');
     const x1 = existing.length ? Math.max(...existing.map(b=>boxExt(b).x2)) + 10 : 0;
     const id = uid();
-    const bx = { id, kind:'product', name:null, x1, y1:0, x2:x1+W, y2:H, parentId:null, open:true, bind:{x1:null,y1:null,x2:null,y2:null} };
+    const bx = { id, kind:'product', name:null, x1, y1:0, x2:x1+W, y2:H, parentId:null, open:false, bind:{x1:null,y1:null,x2:null,y2:null} };
     state.boxes.push(bx);
     state.selection = { kind:'box', id };
+    openWithAncestors(bx); // closes any other open Product, since each is its own isolated file
     const cx=(bx.x1+bx.x2)/2, cy=(bx.y1+bx.y2)/2;
     const sx = cv.clientWidth/((W+20)*PPF), sy = cv.clientHeight/((H+20)*PPF);
     state.view.scale = Math.max(0.15, Math.min(12, Math.min(sx,sy)));
     state.view.x = cv.clientWidth/2 - cx*ppfNow();
     state.view.y = cv.clientHeight/2 - cy*ppfNow();
-    refreshTray();
     saveStateToStorage();
     draw();
   }
@@ -2708,7 +2741,13 @@
   // (you then close them from the inside out).
   // Opening/closing a boundary changes which Library section is visible and
   // which item sorts to the top, so both refresh the tray.
+  // Each Product is its own isolated "file" — opening anything closes every
+  // OTHER top-level Product first, so at most one is ever open at a time
+  // and nothing from a different Product stays visible underneath it.
   function openWithAncestors(bx){
+    let root = bx;
+    while (root.parentId != null) { const p = findById(state.boxes, root.parentId); if (!p) break; root = p; }
+    for (const p of state.boxes) if (p.kind==='product' && p.id!==root.id) p.open = false;
     bx.open = true;
     let p = bx.parentId;
     while (p != null) { const pb = findById(state.boxes, p); if (!pb) break; pb.open = true; p = pb.parentId; }
@@ -2901,13 +2940,15 @@
   }
 
   function fitView(){
-    // gather all points
+    // gather all points belonging to the currently open Product only — the
+    // canvas never fits to (or reveals) another Product's content
+    const visible = visibleBoxIds();
     const pts=[];
-    state.walls.forEach(w=>{pts.push(endPos(w.a),endPos(w.b));});
-    state.dims.forEach(d=>{ const ep=dimLineEndpoints(d); if(ep)pts.push(ep[0],ep[1]); });
-    state.gridlines.forEach(g=>{ const gp=gridPos(g); if(g.type==='v')pts.push({x:gp,y:0}); else pts.push({x:0,y:gp}); });
-    state.boxes.forEach(b=>{ const e=boxExt(b); pts.push({x:e.x1,y:e.y1},{x:e.x2,y:e.y2}); });
-    state.elements.forEach(el=>{ elementCorners(el).forEach(c=>pts.push(c)); });
+    state.walls.forEach(w=>{ if(visible.has(w.containerId)) pts.push(endPos(w.a),endPos(w.b)); });
+    state.dims.forEach(d=>{ if(!visible.has(d.containerId)) return; const ep=dimLineEndpoints(d); if(ep)pts.push(ep[0],ep[1]); });
+    state.gridlines.forEach(g=>{ if(!visible.has(g.boxId)) return; const gp=gridPos(g); if(g.type==='v')pts.push({x:gp,y:0}); else pts.push({x:0,y:gp}); });
+    state.boxes.forEach(b=>{ if(!visible.has(b.id)) return; const e=boxExt(b); pts.push({x:e.x1,y:e.y1},{x:e.x2,y:e.y2}); });
+    state.elements.forEach(el=>{ if(visible.has(el.containerId)) elementCorners(el).forEach(c=>pts.push(c)); });
     if(pts.length===0){
       state.view={x:cv.clientWidth/2, y:cv.clientHeight/2, scale:1}; draw(); return;
     }
