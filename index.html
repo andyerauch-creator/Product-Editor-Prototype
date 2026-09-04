@@ -3232,8 +3232,21 @@
   const toolbar=document.getElementById('toolbar');
   toolbar.addEventListener('click', e=>{
     const t=e.target.closest('.tool'); if(!t || !t.dataset.tool)return;
-    setTool(t.dataset.tool);
+    if (t.dataset.tool==='select') cancelInsertProcess(); else setTool(t.dataset.tool);
   });
+  // Escape and the Select button both back all the way out of whatever
+  // insert flow is running: the 4-corner edge-pick (state.inserting, which
+  // runs with the tool already sitting at 'select' — see startInsert) and
+  // arming a custom Element to drop (tool 'element:custom'). Plain
+  // setTool('select') can't double as this: startInsert calls it itself
+  // right after arming state.inserting, so clearing state.inserting inside
+  // setTool would cancel an insert the instant it started.
+  function cancelInsertProcess(){
+    state.inserting = null;
+    state.placingCustomElementId = null;
+    setTool('select');
+    buildInsertList();
+  }
   const trayEl = document.getElementById('tray');
   const toggleLibraryBtn = document.getElementById('toggleLibraryBtn');
   const toggleInsertBtn = document.getElementById('toggleInsertBtn');
@@ -3864,7 +3877,13 @@
     else if(k==='e')setTool('eqdim');
     else if(k==='f')setTool('flexdim');
     else if(e.key==='Delete'||e.key==='Backspace')deleteSelection();
-    else if(e.key==='Escape'){drag=null;dimBuild=null;state.inserting=null;state.selection=null;state.multiSelection=[];buildInsertList();draw();}
+    else if(e.key==='Escape'){
+      drag=null;dimBuild=null;state.selection=null;state.multiSelection=[];
+      // Only forces the tool back to Select if an insert was actually in
+      // progress — Escape otherwise leaves whatever tool you're using alone.
+      if (state.inserting!=null || state.tool==='element:custom') cancelInsertProcess();
+      buildInsertList();draw();
+    }
     else if(e.key==='Home')fitView();
   });
   window.addEventListener('keyup', e=>{
