@@ -2095,18 +2095,20 @@
   function collectSubtreeFull(rootId){
     const { boxes, grids } = collectSubtree(rootId);
     const boxIds = new Set(boxes.map(b=>b.id));
-    // Ownership is strict (no positional fallback) — an untagged wall/element
-    // has no known owner and isn't included, same rule drawLiveThumb uses.
+    // Ownership is strict (no positional fallback) — an untagged wall/
+    // element/dim has no known owner and isn't included, same rule
+    // drawLiveThumb uses.
     const owns = containerId => containerId!=null && boxIds.has(containerId);
     const walls = state.walls.filter(wl=>owns(wl.containerId)).map(wl=>{
       const a=endPos(wl.a), b=endPos(wl.b);
-      return { a:{x:a.x,y:a.y}, b:{x:b.x,y:b.y}, thickness: wl.thickness };
+      return { a:{x:a.x,y:a.y}, b:{x:b.x,y:b.y}, thickness: wl.thickness, containerId: wl.containerId };
     });
     const elements = state.elements.filter(el=>owns(el.containerId)).map(el=>{
       const p=endPos(el.ref);
-      return { type: el.type, rot: el.rot, ref:{x:p.x,y:p.y} };
+      return { type: el.type, rot: el.rot, ref:{x:p.x,y:p.y}, containerId: el.containerId };
     });
-    return { boxes, grids, walls, elements };
+    const dims = state.dims.filter(d=>owns(d.containerId)).map(d=>JSON.parse(JSON.stringify(d)));
+    return { boxes, grids, walls, elements, dims };
   }
   // Begin picking 4 reference edges to place a copy of `id` (a Unit Plan or
   // Layout living anywhere in the document) into the currently open container.
@@ -2149,6 +2151,15 @@
     data.boxes.forEach(b=>idMap.set(b.id, uid()));
     data.grids.forEach(g=>idMap.set(g.id, uid()));
     const remap = id => (id!=null && idMap.has(id)) ? idMap.get(id) : null;
+    const remapRef = ref => {
+      if (!ref) return null;
+      if (ref.type==='grid') { const id=remap(ref.id); return id!=null ? {type:'grid',id} : null; }
+      if (ref.type==='edge') { const bid=remap(ref.boxId); return bid!=null ? {type:'edge',boxId:bid,edge:ref.edge} : null; }
+      return null;
+    };
+    const dimIdMap = new Map();
+    data.dims.forEach(d=>dimIdMap.set(d.id, uid()));
+    const remapDimId = id => (id!=null && dimIdMap.has(id)) ? dimIdMap.get(id) : null;
 
     data.boxes.forEach(b=>{
       b.id=idMap.get(b.id);
@@ -2176,18 +2187,58 @@
       wl.id=uid();
       wl.a={ x:fx(wl.a.x), y:fy(wl.a.y), xRef:null, yRef:null };
       wl.b={ x:fx(wl.b.x), y:fy(wl.b.y), xRef:null, yRef:null };
-      wl.containerId=rootId;
+      // each wall keeps belonging to whichever box in the subtree it was
+      // drawn in (could be a nested Layout, not just the top-level root)
+      wl.containerId=remap(wl.containerId) ?? rootId;
     });
     data.elements.forEach(el=>{
       el.id=uid();
       el.ref={ x:fx(el.ref.x), y:fy(el.ref.y), xRef:null, yRef:null };
-      el.containerId=rootId;
+      el.containerId=remap(el.containerId) ?? rootId;
     });
+    // Dimensions: remap their references the same way box bindings are
+    // remapped above, rescale the dimension-line position and (for locked/
+    // EQ/flex dims) their driven distances by the same factor the geometry
+    // itself was rescaled by, and drop any dim left with under 2 refs.
+    data.dims = data.dims.map(d=>{
+      d.id = remapDimId(d.id);
+      d.containerId = remap(d.containerId) ?? rootId;
+      d.refs = d.refs.map(remapRef).filter(Boolean);
+      if (d.refs.length < 2) return null;
+      d.line = d.axis==='h' ? fy(d.line) : fx(d.line);
+      const contBox = findById(data.boxes, d.containerId);
+      if (contBox) d.lineOff = d.line - (d.axis==='h' ? contBox.y1 : contBox.x1);
+      const gridAxisScale = type => type==='v' ? (tW/oW) : (tH/oH);
+      if (d.drives) {
+        d.drives = d.drives.map(dr=>{
+          const nd = {...dr};
+          if (nd.gridId!=null) nd.gridId = remap(nd.gridId);
+          if (nd.anchorRef) nd.anchorRef = remapRef(nd.anchorRef);
+          if (nd.anchorA) nd.anchorA = remapRef(nd.anchorA);
+          if (nd.anchorB) nd.anchorB = remapRef(nd.anchorB);
+          if (nd.dimId!=null) nd.dimId = remapDimId(nd.dimId);
+          if (nd.offset!==undefined) {
+            const g = findById(data.grids, nd.gridId);
+            nd.offset = dr.offset * (g ? gridAxisScale(g.type) : 1);
+          }
+          return nd;
+        }).filter(dr=>dr.gridId!=null);
+      }
+      if (d.firstRef) d.firstRef = remapRef(d.firstRef);
+      if (d.lastRef) d.lastRef = remapRef(d.lastRef);
+      if (d.flex && d.segLens) {
+        const axisScale = d.axis==='h' ? (tW/oW) : (tH/oH);
+        d.segLens = d.segLens.map(l=>l*axisScale);
+        d.S0 = d.S0*axisScale;
+      }
+      return d;
+    }).filter(Boolean);
 
     state.boxes.push(...data.boxes);
     state.gridlines.push(...data.grids);
     state.walls.push(...data.walls);
     state.elements.push(...data.elements);
+    state.dims.push(...data.dims);
     // snap walls/elements onto the newly-placed grid system where they land cleanly
     data.walls.forEach(wl=>reanchorWall(wl));
     data.elements.forEach(el=>{
@@ -2371,7 +2422,8 @@
       relabelGrid();
     }
     if(s.kind==='box'){
-      // remove the box, its descendant boxes, and the grid lines bound to them
+      // remove the box, its descendant boxes, the grid lines bound to them,
+      // and the walls/elements/dims that belong to any of them
       bakeAllWallCoords();
       const sub = collectSubtree(s.id);
       const boxIds = new Set(sub.boxes.map(b=>b.id));
@@ -2379,6 +2431,9 @@
       state.gridlines = state.gridlines.filter(g=>!gridIds.has(g.id));
       clearRefsTo(boxIds, gridIds); // edges/endpoints bound to removed features go free
       state.boxes = state.boxes.filter(b=>!boxIds.has(b.id));
+      state.walls = state.walls.filter(w=>!boxIds.has(w.containerId));
+      state.elements = state.elements.filter(el=>!boxIds.has(el.containerId));
+      state.dims = state.dims.filter(d=>!boxIds.has(d.containerId));
       relabelGrid();
     }
   }
