@@ -1070,12 +1070,42 @@
 
   // Dim content outside each open boundary with a 25% white overlay; overlays
   // stack so the deepest-open boundary's interior is the brightest (the focus).
+  // How far outward (feet) the mask cutout for `bx` should extend past its
+  // own boundary line on each side, so it lines up with the OUTSIDE face of
+  // whatever wall traces that edge instead of cutting through the middle of
+  // it (a wall's centerline sits on the boundary, so its outer face sits
+  // half a thickness beyond it). Looks at every wall in the currently
+  // visible file, not just ones this box itself owns — a perimeter wall
+  // tracing a nested box's edge is usually owned by the parent it was drawn
+  // in. 0 on any side with no aligned wall (nothing to offset for).
+  function boxWallExpansion(bx){
+    const e = boxExt(bx);
+    const exp = {x1:0, x2:0, y1:0, y2:0};
+    const eps = 0.05; // feet — "on the edge" tolerance
+    const visible = visibleBoxIds();
+    for (const w of state.walls) {
+      if (!visible.has(w.containerId)) continue;
+      const a = endPos(w.a), b = endPos(w.b);
+      const t = (w.thickness||0.5)/2;
+      const spanY = [Math.min(a.y,b.y), Math.max(a.y,b.y)];
+      const spanX = [Math.min(a.x,b.x), Math.max(a.x,b.x)];
+      const overlapsY = spanY[0] < e.y2+eps && spanY[1] > e.y1-eps;
+      const overlapsX = spanX[0] < e.x2+eps && spanX[1] > e.x1-eps;
+      if (Math.abs(a.x-e.x1)<eps && Math.abs(b.x-e.x1)<eps && overlapsY) exp.x1 = Math.max(exp.x1, t);
+      if (Math.abs(a.x-e.x2)<eps && Math.abs(b.x-e.x2)<eps && overlapsY) exp.x2 = Math.max(exp.x2, t);
+      if (Math.abs(a.y-e.y1)<eps && Math.abs(b.y-e.y1)<eps && overlapsX) exp.y1 = Math.max(exp.y1, t);
+      if (Math.abs(a.y-e.y2)<eps && Math.abs(b.y-e.y2)<eps && overlapsX) exp.y2 = Math.max(exp.y2, t);
+    }
+    return exp;
+  }
   function drawDimming() {
     const opens = state.boxes.filter(b=>b.open);
     if (!opens.length) return;
     const W=cv.clientWidth, H=cv.clientHeight;
     for (const b of opens) {
-      const e=boxExt(b), p1=w2s({x:e.x1,y:e.y1}), p2=w2s({x:e.x2,y:e.y2});
+      const e=boxExt(b);
+      const exp=boxWallExpansion(b);
+      const p1=w2s({x:e.x1-exp.x1,y:e.y1-exp.y1}), p2=w2s({x:e.x2+exp.x2,y:e.y2+exp.y2});
       const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y), ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
       ctx.beginPath(); ctx.rect(0,0,W,H); ctx.rect(x,y,ww,hh);
       ctx.fillStyle='rgba(255,255,255,.75)'; ctx.fill('evenodd');
