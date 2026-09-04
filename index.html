@@ -136,24 +136,8 @@
     background: var(--panel); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; overflow-y: auto;
   }
-  #tray h3 { font-size: 12px; font-weight: 600; padding: 12px 12px 8px; color: var(--ink); }
+  #tray h3 { font-size: 12px; font-weight: 600; padding: 12px 12px 8px; color: var(--ink); border-bottom: 1px solid var(--border); margin-bottom: 6px; }
   #tray .list { padding: 0 10px 10px; }
-  #tray #unitplansList { border-bottom: 1px solid var(--border); }
-  #tray .row {
-    display: flex; align-items: center; gap: 6px;
-    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px;
-    background: var(--panel-2); padding: 7px 9px; cursor: pointer;
-  }
-  #tray .row:hover { border-color: var(--accent); }
-  #tray .row input[type=text] {
-    flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border);
-    color: var(--ink); border-radius: 6px; padding: 5px 7px; font-size: 12px;
-  }
-  #tray .row .nm2 {
-    flex: 1; min-width: 0; font-size: 12px; color: var(--ink);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  #tray .row .nm2 .suffix { color: var(--muted); }
   #tray .item {
     border: 1px solid var(--border); border-radius: 8px; margin-bottom: 9px;
     background: var(--panel-2); cursor: pointer; overflow: hidden; position: relative;
@@ -161,7 +145,13 @@
   #tray .item:hover { border-color: var(--accent); }
   #tray .item.placing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   #tray .item canvas { display: block; width: 100%; height: 96px; background: var(--bg); }
+  #tray .item.compact canvas { height: 68px; }
   #tray .item .nm { font-size: 11px; padding: 5px 8px; color: var(--ink); border-top: 1px solid var(--border); }
+  #tray .item .nm .suffix { color: var(--muted); }
+  #tray .item .nm input[type=text] {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    color: var(--ink); border-radius: 6px; padding: 4px 6px; font-size: 11px;
+  }
   #tray .item .del {
     position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; border-radius: 4px;
     background: rgba(20,23,28,.7); color: #ff8a8a; font-size: 13px; line-height: 18px;
@@ -899,6 +889,7 @@
     const id = uid();
     state.elements.push({ id, ref:{ x:a.x, y:a.y, xRef:a.xRef, yRef:a.yRef }, rot:0 });
     state.selection = { kind:'element', id };
+    refreshTray();
   }
 
   function drawGridlines(w, h) {
@@ -1284,7 +1275,6 @@
           state.boxes.push(bx);
           rebindBox(bx); // attach to parent's grids/edges if applicable
           state.selection={kind:'box',id};
-          refreshTray();
         }
       }
     } else if (drag.kind === 'resizeBox') {
@@ -1316,6 +1306,7 @@
       }
     }
     drag=null;
+    refreshTray(); // any of the edits above can change a boundary's live preview
     draw();
   });
 
@@ -1672,6 +1663,59 @@
       c.restore();
     }
   }
+  // Render a live preview of a Product/Unit Plan boundary's actual current
+  // contents (nested boundaries, grids, walls, elements) into a small canvas —
+  // unlike drawTemplateThumb this reads straight from live state, not a
+  // captured/normalized template.
+  function drawLiveThumb(canvas, box){
+    const c=canvas.getContext('2d'), cw=canvas.width, ch=canvas.height, pad=8;
+    c.clearRect(0,0,cw,ch);
+    const e=boxExt(box), W=(e.x2-e.x1)||1, H=(e.y2-e.y1)||1;
+    const sc=Math.min((cw-2*pad)/W,(ch-2*pad)/H);
+    const ox=(cw-W*sc)/2, oy=(ch-H*sc)/2;
+    const SX=wx=>ox+(wx-e.x1)*sc, SY=wy=>oy+(wy-e.y1)*sc;
+    const inRect=p=>p.x>=e.x1-0.05&&p.x<=e.x2+0.05&&p.y>=e.y1-0.05&&p.y<=e.y2+0.05;
+    c.strokeStyle='#7e879a'; c.lineWidth=1; c.strokeRect(ox,oy,W*sc,H*sc);
+    // nested boundaries (e.g. a product's unit plans, a unit plan's layouts)
+    c.setLineDash([2,2]);
+    for(const d of state.boxes){
+      if(d.id===box.id || !isBoxAncestor(box.id,d)) continue;
+      const de=boxExt(d);
+      c.strokeStyle=boundaryColor(d); c.lineWidth=1;
+      c.strokeRect(SX(de.x1), SY(de.y1), (de.x2-de.x1)*sc, (de.y2-de.y1)*sc);
+    }
+    c.setLineDash([]);
+    // grid lines that fall within the box
+    c.strokeStyle='#7da0d0'; c.setLineDash([3,2]);
+    for(const g of state.gridlines){
+      const gp=gridPos(g);
+      c.beginPath();
+      if(g.type==='v'){ if(gp<e.x1-0.05||gp>e.x2+0.05) continue; const x=SX(gp); c.moveTo(x,SY(e.y1)); c.lineTo(x,SY(e.y2)); }
+      else { if(gp<e.y1-0.05||gp>e.y2+0.05) continue; const y=SY(gp); c.moveTo(SX(e.x1),y); c.lineTo(SX(e.x2),y); }
+      c.stroke();
+    }
+    c.setLineDash([]);
+    // walls whose midpoint falls within the box
+    for(const wl of state.walls){
+      const a=endPos(wl.a), b=endPos(wl.b);
+      if(!inRect({x:(a.x+b.x)/2, y:(a.y+b.y)/2})) continue;
+      const ax=SX(a.x),ay=SY(a.y),bx=SX(b.x),by=SY(b.y);
+      const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1, hpx=Math.max(1.2,(wl.thickness||0.5)*sc/2), nx=-dy/len*hpx, ny=dx/len*hpx;
+      c.fillStyle='#e6e9ef'; c.beginPath(); c.moveTo(ax+nx,ay+ny);c.lineTo(bx+nx,by+ny);c.lineTo(bx-nx,by-ny);c.lineTo(ax-nx,ay-ny);c.closePath();c.fill();
+      c.strokeStyle='#5b6472';c.lineWidth=0.6;c.stroke();
+    }
+    // elements whose insertion point falls within the box
+    for(const el of state.elements){
+      const p=endPos(el.ref);
+      if(!inRect(p)) continue;
+      c.save();
+      c.translate(SX(p.x), SY(p.y));
+      c.rotate((el.rot||0)*Math.PI/180);
+      c.scale(sc, sc);
+      drawToiletSymbol(c, { fill:'#c2c8d2', stroke:'#6b7280', lineWidth: 1/sc });
+      c.restore();
+    }
+  }
   const trayList=document.getElementById('trayList');
   function buildSavedLayoutsList(){
     if(!state.savedLayouts.length){ trayList.innerHTML=''; return; }
@@ -1708,13 +1752,17 @@
     if(!products.length){ productsListEl.innerHTML=''; return; }
     productsListEl.innerHTML='';
     for(const bx of products){
-      const row=document.createElement('div'); row.className='row';
+      const item=document.createElement('div'); item.className='item compact';
+      const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=96; item.appendChild(cv2);
+      const nm=document.createElement('div'); nm.className='nm';
       const inp=document.createElement('input'); inp.type='text'; inp.value=bx.name||'';
       inp.addEventListener('click', e=>e.stopPropagation());
       inp.addEventListener('input', ()=>{ bx.name=inp.value; buildUnitplansList(); });
-      row.appendChild(inp);
-      row.addEventListener('click', ()=>{ state.selection={kind:'box',id:bx.id}; draw(); });
-      productsListEl.appendChild(row);
+      nm.appendChild(inp);
+      item.appendChild(nm);
+      item.addEventListener('click', e=>{ if(e.target===inp)return; state.selection={kind:'box',id:bx.id}; draw(); });
+      productsListEl.appendChild(item);
+      drawLiveThumb(cv2, bx);
     }
   }
   const unitplansListEl=document.getElementById('unitplansList');
@@ -1724,12 +1772,14 @@
     unitplansListEl.innerHTML='';
     for(const bx of plans){
       const {prefix,suffix} = unitplanDisplayName(bx);
-      const row=document.createElement('div'); row.className='row';
-      const nm=document.createElement('div'); nm.className='nm2';
+      const item=document.createElement('div'); item.className='item compact';
+      const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=96; item.appendChild(cv2);
+      const nm=document.createElement('div'); nm.className='nm';
       nm.textContent=prefix; const sp=document.createElement('span'); sp.className='suffix'; sp.textContent=suffix; nm.appendChild(sp);
-      row.appendChild(nm);
-      row.addEventListener('click', ()=>{ state.selection={kind:'box',id:bx.id}; draw(); });
-      unitplansListEl.appendChild(row);
+      item.appendChild(nm);
+      item.addEventListener('click', ()=>{ state.selection={kind:'box',id:bx.id}; draw(); });
+      unitplansListEl.appendChild(item);
+      drawLiveThumb(cv2, bx);
     }
   }
   function refreshTray(){ ensureProductNames(); buildProductsList(); buildUnitplansList(); buildSavedLayoutsList(); }
@@ -2045,8 +2095,8 @@
       clearRefsTo(boxIds, gridIds); // edges/endpoints bound to removed features go free
       state.boxes = state.boxes.filter(b=>!boxIds.has(b.id));
       relabelGrid();
-      refreshTray();
     }
+    refreshTray(); // wall/element/grid/box removal can all change a preview's contents
     state.selection=null; draw();
   }
 
