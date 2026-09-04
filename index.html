@@ -136,6 +136,7 @@
     background: var(--panel); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; overflow-y: auto;
   }
+  .panel[hidden] { display: none; }
   .panel h3 { font-size: 12px; font-weight: 600; padding: 12px 12px 8px; color: var(--ink); border-bottom: 1px solid var(--border); margin-bottom: 6px; }
   .panel .list { padding: 0 10px 10px; }
   .panel .item {
@@ -1699,7 +1700,6 @@
     const sc=Math.min((cw-2*pad)/W,(ch-2*pad)/H);
     const ox=(cw-W*sc)/2, oy=(ch-H*sc)/2;
     const SX=wx=>ox+(wx-e.x1)*sc, SY=wy=>oy+(wy-e.y1)*sc;
-    const inRect=p=>p.x>=e.x1-0.05&&p.x<=e.x2+0.05&&p.y>=e.y1-0.05&&p.y<=e.y2+0.05;
     c.strokeStyle='#7e879a'; c.lineWidth=1; c.strokeRect(ox,oy,W*sc,H*sc);
     // Scope to this box's own subtree (itself + descendants) by ownership,
     // not just world position — two unit plans/layouts can sit in different
@@ -1728,24 +1728,25 @@
     }
     c.setLineDash([]);
     // Walls/elements own no grid-line-style boxId, so ownership is inferred
-    // from the container that was open when they were drawn (containerId).
-    // Untagged legacy entries (drawn before that was tracked) fall back to
-    // pure position — everything else must belong to this box's own subtree,
-    // not just happen to sit at the same coordinates.
-    const owned = containerId => containerId==null ? true : scopeIds.has(containerId);
-    // walls whose midpoint falls within the box and belong to it
+    // strictly from the container that was open when they were drawn
+    // (containerId) — an untagged wall (drawn before that was tracked, or
+    // with nothing open at all) has no known owner and is excluded rather
+    // than guessed at by position, which is exactly how a parent's walls
+    // were leaking into a nested box's preview.
+    const owned = containerId => containerId!=null && scopeIds.has(containerId);
+    // walls that belong to this box or one of its descendants
     for(const wl of state.walls){
+      if(!owned(wl.containerId)) continue;
       const a=endPos(wl.a), b=endPos(wl.b);
-      if(!inRect({x:(a.x+b.x)/2, y:(a.y+b.y)/2}) || !owned(wl.containerId)) continue;
       const ax=SX(a.x),ay=SY(a.y),bx=SX(b.x),by=SY(b.y);
       const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1, hpx=Math.max(1.2,(wl.thickness||0.5)*sc/2), nx=-dy/len*hpx, ny=dx/len*hpx;
       c.fillStyle='#e6e9ef'; c.beginPath(); c.moveTo(ax+nx,ay+ny);c.lineTo(bx+nx,by+ny);c.lineTo(bx-nx,by-ny);c.lineTo(ax-nx,ay-ny);c.closePath();c.fill();
       c.strokeStyle='#5b6472';c.lineWidth=0.6;c.stroke();
     }
-    // elements whose insertion point falls within the box and belong to it
+    // elements that belong to this box or one of its descendants
     for(const el of state.elements){
+      if(!owned(el.containerId)) continue;
       const p=endPos(el.ref);
-      if(!inRect(p) || !owned(el.containerId)) continue;
       const {w,h,draw} = elementType(el);
       c.save();
       c.translate(SX(p.x), SY(p.y));
@@ -2044,21 +2045,14 @@
   function collectSubtreeFull(rootId){
     const { boxes, grids } = collectSubtree(rootId);
     const boxIds = new Set(boxes.map(b=>b.id));
-    const root = findById(state.boxes, rootId);
-    const e = boxExt(root);
-    const inRect = p => p.x>=e.x1-0.05 && p.x<=e.x2+0.05 && p.y>=e.y1-0.05 && p.y<=e.y2+0.05;
-    const owns = containerId => containerId!=null ? boxIds.has(containerId) : null; // null = fall back to position
-    const walls = state.walls.filter(wl=>{
-      const o=owns(wl.containerId); if (o!=null) return o;
-      const a=endPos(wl.a), b=endPos(wl.b); return inRect({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
-    }).map(wl=>{
+    // Ownership is strict (no positional fallback) — an untagged wall/element
+    // has no known owner and isn't included, same rule drawLiveThumb uses.
+    const owns = containerId => containerId!=null && boxIds.has(containerId);
+    const walls = state.walls.filter(wl=>owns(wl.containerId)).map(wl=>{
       const a=endPos(wl.a), b=endPos(wl.b);
       return { a:{x:a.x,y:a.y}, b:{x:b.x,y:b.y}, thickness: wl.thickness };
     });
-    const elements = state.elements.filter(el=>{
-      const o=owns(el.containerId); if (o!=null) return o;
-      return inRect(endPos(el.ref));
-    }).map(el=>{
+    const elements = state.elements.filter(el=>owns(el.containerId)).map(el=>{
       const p=endPos(el.ref);
       return { type: el.type, rot: el.rot, ref:{x:p.x,y:p.y} };
     });
