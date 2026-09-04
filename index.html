@@ -2171,19 +2171,18 @@
     // that merely HAS instances (but isn't one itself — e.g. reopening the
     // original) only offers to push to main, since there's nothing to branch
     // without duplicating a box that already has its own canvas position.
-    // Anything with no lineage at all is just a plain close.
+    // Anything with no lineage at all is just a plain close. Products never
+    // get a branch option at all — they only ever save to main.
+    const canBranch = bx.kind!=='product';
+    const saveToMainItem = { label:'Close and save to main', sc:'', disabled:lockedOpen, act:()=>{ saveToMain(bx.id); closeBoundary(bx); } };
     const closeItems = !bx.open
       ? [{ label:'Open', sc:'', disabled:lockedOpen, act:()=>openWithAncestors(bx) }]
       : bx.masterId!=null
-        ? [
-            { label:'Close and save to main', sc:'', disabled:lockedOpen, act:()=>{ saveToMain(bx.id); closeBoundary(bx); } },
-            { label:'Close and create branch', sc:'', disabled:lockedOpen, act:()=>{ saveAsBranch(bx.id); closeBoundary(bx); } },
-          ]
+        ? (canBranch
+            ? [ saveToMainItem, { label:'Close and create branch', sc:'', disabled:lockedOpen, act:()=>{ saveAsBranch(bx.id); closeBoundary(bx); } } ]
+            : [ saveToMainItem, { label:'Close', sc:'', disabled:lockedOpen, act:()=>closeBoundary(bx) } ])
         : hasLiveInstances(bx.id)
-          ? [
-              { label:'Close and save to main', sc:'', disabled:lockedOpen, act:()=>{ saveToMain(bx.id); closeBoundary(bx); } },
-              { label:'Close', sc:'', disabled:lockedOpen, act:()=>closeBoundary(bx) },
-            ]
+          ? [ saveToMainItem, { label:'Close', sc:'', disabled:lockedOpen, act:()=>closeBoundary(bx) } ]
           : [{ label:'Close', sc:'', disabled:lockedOpen, act:()=>closeBoundary(bx) }];
     const items = [
       ...closeItems,
@@ -2739,7 +2738,7 @@
   // under that original, never under the branch it happened to come from.
   function saveAsBranch(boxId){
     const box = findById(state.boxes, boxId);
-    if (!box) return;
+    if (!box || box.kind==='product') return; // Products only ever save to main, never branch
     const root = familyRoot(box);
     const rootId = root ? root.id : box.id;
     const rootObj = root ? root.obj : box;
