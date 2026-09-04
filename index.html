@@ -77,6 +77,10 @@
   #toolbar .group summary::-webkit-details-marker { display: none; }
   #toolbar .group summary::after { content: '▸'; font-size: 9px; transition: transform .15s; }
   #toolbar .group[open] summary::after { transform: rotate(90deg); }
+  /* Element's sub-tools (Toilet/Table/Bed/Car) sit right under its own
+     toggle button, inline within the Boundaries group — not a dropdown. */
+  #elementSubTools { display: flex; flex-direction: column; gap: 6px; padding-left: 6px; }
+  #elementSubTools[hidden] { display: none; }
   #toolbar .group.disabled { opacity: .35; pointer-events: none; }
 
   .field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
@@ -255,24 +259,27 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
           Layout
         </div>
-      </details>
-      <details class="group" id="elementGroup" title="Only usable while a Layout is open">
-        <summary>Element</summary>
-        <div class="tool" data-tool="element:toilet" title="Toilet (N) — place on an intersection/corner">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="3" width="10" height="4.5" rx="1" fill="currentColor" stroke="none"/><ellipse cx="12" cy="15" rx="7" ry="6.2"/></svg>
-          Toilet
-        </div>
-        <div class="tool" data-tool="element:table" title="Table — place on an intersection/corner">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="7" width="16" height="10" rx="1.5" fill="currentColor" stroke="none"/></svg>
-          Table
-        </div>
-        <div class="tool" data-tool="element:bed" title="Bed — place on an intersection/corner">
+        <div class="tool" id="elementToggle" title="Element — place furniture/fixtures (only usable while a Layout is open)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="1.5"/><rect x="6" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/><rect x="13" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/></svg>
-          Bed
+          Element
         </div>
-        <div class="tool" data-tool="element:car" title="Car — place on an intersection/corner">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="2" width="10" height="20" rx="4"/><path d="M7.5 8h9M7.5 16h9"/></svg>
-          Car
+        <div id="elementSubTools" hidden>
+          <div class="tool" data-tool="element:toilet" title="Toilet (N) — place on an intersection/corner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="3" width="10" height="4.5" rx="1" fill="currentColor" stroke="none"/><ellipse cx="12" cy="15" rx="7" ry="6.2"/></svg>
+            Toilet
+          </div>
+          <div class="tool" data-tool="element:table" title="Table — place on an intersection/corner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="7" width="16" height="10" rx="1.5" fill="currentColor" stroke="none"/></svg>
+            Table
+          </div>
+          <div class="tool" data-tool="element:bed" title="Bed — place on an intersection/corner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="1.5"/><rect x="6" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/><rect x="13" y="6" width="5" height="3.5" rx="1" fill="currentColor" stroke="none"/></svg>
+            Bed
+          </div>
+          <div class="tool" data-tool="element:car" title="Car — place on an intersection/corner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="2" width="10" height="20" rx="4"/><path d="M7.5 8h9M7.5 16h9"/></svg>
+            Car
+          </div>
         </div>
       </details>
     </div>
@@ -2892,7 +2899,16 @@
     saveStateToStorage();
   }
   // Enable only the drawable boundary tool; grey out the others.
-  const elementGroupEl = document.getElementById('elementGroup');
+  // "Element" isn't a draw tool itself — it's a toggle that reveals the
+  // Toilet/Table/Bed/Car buttons inline underneath it, grouped right in
+  // with the other boundary buttons rather than as a separate dropdown.
+  const elementToggleEl = document.getElementById('elementToggle');
+  const elementSubToolsEl = document.getElementById('elementSubTools');
+  elementToggleEl.addEventListener('click', ()=>{
+    if (elementToggleEl.classList.contains('disabled')) return;
+    elementSubToolsEl.hidden = !elementSubToolsEl.hidden;
+    elementToggleEl.classList.toggle('active', !elementSubToolsEl.hidden);
+  });
   function updateToolAvailability(){
     const drawable = drawableBoundaryKind();
     for (const kind of ['product','unitplan','layout']) {
@@ -2902,7 +2918,9 @@
     // Elements are furniture/fixtures for a Layout's interior — only usable
     // while a Layout is the open (deepest) container.
     const layoutOpen = (activeContainer()||{}).kind === 'layout';
-    elementGroupEl.classList.toggle('disabled', !layoutOpen);
+    elementToggleEl.classList.toggle('disabled', !layoutOpen);
+    if (!layoutOpen) { elementSubToolsEl.hidden = true; elementToggleEl.classList.remove('active'); }
+    else if (isElementTool(state.tool)) { elementSubToolsEl.hidden = false; elementToggleEl.classList.add('active'); }
     // if the active tool just became unavailable, fall back to select
     const toolNowInvalid = (['product','unitplan','layout'].includes(state.tool) && state.tool!==drawable)
       || (isElementTool(state.tool) && !layoutOpen);
