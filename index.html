@@ -303,6 +303,7 @@
     showDims: { product:true, unitplan:true, layout:true }, // dim visibility per container kind
     selection: null, // {kind, id}
     inserting: null, // {sourceId, picks:[{axis,ref,coord}]} while picking 4 grids to insert a copy
+    multiSelection: [], // [{kind,id}, ...] from a click-drag marquee select
   };
   let nextId = 1;
   const uid = () => nextId++;
@@ -510,6 +511,30 @@
       }
     }
     return best;
+  }
+  // Every box/wall/element/grid whose bounding box overlaps world-space rect
+  // r={x1,y1,x2,y2} — used for the click-drag marquee multi-select.
+  function itemsInRect(r){
+    const overlaps = (bx1,by1,bx2,by2) => bx2>=r.x1 && bx1<=r.x2 && by2>=r.y1 && by1<=r.y2;
+    const items = [];
+    for (const b of state.boxes) {
+      const e = boxExt(b);
+      if (overlaps(e.x1,e.y1,e.x2,e.y2)) items.push({kind:'box', id:b.id});
+    }
+    for (const wl of state.walls) {
+      const a=endPos(wl.a), b=endPos(wl.b);
+      if (overlaps(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.max(a.x,b.x),Math.max(a.y,b.y))) items.push({kind:'wall', id:wl.id});
+    }
+    for (const el of state.elements) {
+      const cs = elementCorners(el);
+      const xs=cs.map(c=>c.x), ys=cs.map(c=>c.y);
+      if (overlaps(Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys))) items.push({kind:'element', id:el.id});
+    }
+    for (const g of state.gridlines) {
+      const gp = gridPos(g);
+      if (g.type==='v' ? (gp>=r.x1 && gp<=r.x2) : (gp>=r.y1 && gp<=r.y2)) items.push({kind:'grid', id:g.id});
+    }
+    return items;
   }
 
   // ---- Wall endpoint anchoring ----------------------------------------------
@@ -784,14 +809,15 @@
   function drawBoxes() {
     const order = { layout:0, unitplan:1, product:2 };
     const selId = (state.selection && state.selection.kind==='box') ? state.selection.id : null;
+    const multiIds = new Set(state.multiSelection.filter(s=>s.kind==='box').map(s=>s.id));
     const ht = activeHover();
     const hoverBoxId = (ht && ht.kind==='box') ? ht.id : null;
     const active = activeContainer();
     const activeId = active ? active.id : null;
-    const z = b => (b.id===hoverBoxId) ? 1001 : (b.id===selId) ? 1000 : (order[b.kind]??2);
+    const z = b => (b.id===hoverBoxId) ? 1001 : (b.id===selId||multiIds.has(b.id)) ? 1000 : (order[b.kind]??2);
     const sorted = [...state.boxes].sort((a,b)=>z(a)-z(b));
     for (const bx of sorted) {
-      const sel = bx.id===selId, hov = bx.id===hoverBoxId;
+      const sel = bx.id===selId || multiIds.has(bx.id), hov = bx.id===hoverBoxId;
       const e = boxExt(bx);
       const p1 = w2s({x:e.x1,y:e.y1}), p2 = w2s({x:e.x2,y:e.y2});
       const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y);
@@ -920,8 +946,9 @@
   function drawElements() {
     const ht = activeHover();
     const hoverElId = (ht && ht.kind==='element') ? ht.id : null;
+    const multiIds = new Set(state.multiSelection.filter(s=>s.kind==='element').map(s=>s.id));
     for (const el of state.elements) {
-      const sel = state.selection && state.selection.kind==='element' && state.selection.id===el.id;
+      const sel = (state.selection && state.selection.kind==='element' && state.selection.id===el.id) || multiIds.has(el.id);
       const hov = el.id===hoverElId;
       const P = w2s(endPos(el.ref));
       const scale = ppfNow();
@@ -967,8 +994,9 @@
   function drawGridlines(w, h) {
     const ht = activeHover();
     const hoverGridId = (ht && ht.kind==='grid') ? ht.id : null;
+    const multiIds = new Set(state.multiSelection.filter(s=>s.kind==='grid').map(s=>s.id));
     for (const g of state.gridlines) {
-      const sel = state.selection && state.selection.kind==='grid' && state.selection.id===g.id;
+      const sel = (state.selection && state.selection.kind==='grid' && state.selection.id===g.id) || multiIds.has(g.id);
       const hov = g.id===hoverGridId;
       const gbx = g.boxId!=null ? findById(state.boxes, g.boxId) : null;
       const base = gbx ? boundaryColor(gbx) : '#5b86c4'; // match the container's color
@@ -1045,8 +1073,10 @@
     // blit the merged white-filled walls onto the main canvas (device pixels, 1:1)
     ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.drawImage(offCanvas,0,0); ctx.restore();
     // selection highlight (drawn normally on top)
+    const multiWallIds = new Set(state.multiSelection.filter(s=>s.kind==='wall').map(s=>s.id));
     for (const wl of state.walls) {
-      if (state.selection && state.selection.kind==='wall' && state.selection.id===wl.id) {
+      const sel = (state.selection && state.selection.kind==='wall' && state.selection.id===wl.id) || multiWallIds.has(wl.id);
+      if (sel) {
         const a=w2s(endPos(wl.a)), b=w2s(endPos(wl.b));
         const thkPx=Math.max(2.8,(wl.thickness||0.5)*ppfNow());
         ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1.6; ctx.lineJoin='miter'; ctx.lineCap='butt';
@@ -1224,6 +1254,7 @@
     if (e.button !== 0) return;
     const wp = s2w(sp);
     const snapped = snapWorld(wp);
+    state.multiSelection = []; // any new canvas interaction drops a prior marquee selection
 
     // inserting a copy: each click picks a reference edge (grid or box edge)
     if (state.inserting) {
@@ -1265,6 +1296,7 @@
       }
       state.selection = hit;
       if (hit) {
+        state.multiSelection = [];
         drag = { kind:'move', hit, start: snapped, orig: cloneEntity(hit) };
         // capture the box's current effective extent; it is baked into free
         // coords on first movement, then re-bound to grids on drop
@@ -1272,6 +1304,10 @@
         if (hit.kind==='wall') { const wl=findById(state.walls, hit.id); drag.startA=endPos(wl.a); drag.startB=endPos(wl.b); }
         if (hit.kind==='dim') { drag.origLine = dimLine(findById(state.dims, hit.id)); }
         if (hit.kind==='element') { drag.startP = endPos(findById(state.elements, hit.id).ref); }
+      } else {
+        // empty space → click-drag a marquee to select everything it covers
+        state.multiSelection = [];
+        drag = { kind:'marquee', x1:wp.x, y1:wp.y, x2:wp.x, y2:wp.y };
       }
       draw();
       return;
@@ -1313,6 +1349,7 @@
       else if (drag.kind === 'box') { drag.x2 = mouseW.x; drag.y2 = mouseW.y; }
       else if (drag.kind === 'resizeBox') resizeBox(drag, mouseW);
       else if (drag.kind === 'move') doMove(drag, mouseW);
+      else if (drag.kind === 'marquee') { drag.x2 = mouseWRaw.x; drag.y2 = mouseWRaw.y; }
     } else {
       refreshHover(sp);   // update overlapping-container highlight under the cursor
     }
@@ -1360,6 +1397,11 @@
       const type = shiftDown ? 'h' : 'v';
       const pos = type==='v' ? b.x : b.y;
       addGridline(type, pos, b);
+    } else if (drag.kind === 'marquee') {
+      const r = { x1:Math.min(drag.x1,drag.x2), x2:Math.max(drag.x1,drag.x2),
+                  y1:Math.min(drag.y1,drag.y2), y2:Math.max(drag.y1,drag.y2) };
+      // an essentially-unmoved click just deselects, same as any empty click
+      if (r.x2-r.x1 > 0.05 || r.y2-r.y1 > 0.05) state.multiSelection = itemsInRect(r);
     } else if (drag.kind === 'wall') {
       const aW=endPos(drag.a), bW=endPos(drag.b);
       const len = Math.hypot(bW.x-aW.x, bW.y-aW.y);
@@ -1508,6 +1550,13 @@
       ctx.strokeStyle=`hsl(${BOUNDARY_HUE[drag.boxKind]??217}, 68%, 62%)`; ctx.lineWidth=1.6; ctx.setLineDash([]);
       ctx.strokeRect(x,y,ww,hh);
       labelAt(p2, `${fmtFeet(Math.abs(drag.x2-drag.x1))} × ${fmtFeet(Math.abs(drag.y2-drag.y1))}`);
+    } else if (drag.kind === 'marquee') {
+      const p1=w2s({x:drag.x1,y:drag.y1}), p2=w2s({x:drag.x2,y:drag.y2});
+      const x=Math.min(p1.x,p2.x), y=Math.min(p1.y,p2.y);
+      const ww=Math.abs(p2.x-p1.x), hh=Math.abs(p2.y-p1.y);
+      ctx.fillStyle='rgba(76,154,255,.12)'; ctx.fillRect(x,y,ww,hh);
+      ctx.strokeStyle='#4c9aff'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
+      ctx.strokeRect(x,y,ww,hh); ctx.setLineDash([]);
     }
     drawCursorMarker();
   }
@@ -1917,7 +1966,7 @@
       { label: 'Copy', sc:'Ctrl+C', act:()=>copyBox(boxId) },
       { label: 'Paste', sc:'Ctrl+V', act:()=>pasteClipboard(s2w({x,y})), disabled:!clipboard },
       { divider:true },
-      { label: 'Delete', sc:'Del', danger:true, act:()=>{ state.selection={kind:'box',id:boxId}; deleteSelection(); } },
+      { label: 'Delete', sc:'Del', danger:true, act:()=>{ state.multiSelection=[]; state.selection={kind:'box',id:boxId}; deleteSelection(); } },
     ];
     menuEl.innerHTML='';
     for (const it of items){
@@ -1948,7 +1997,7 @@
     showMenu(x, y, [
       { label:'Rotate 90°', sc:'R', act:()=>{ const el=findById(state.elements,id); if(el) el.rot=((el.rot||0)+90)%360; } },
       { divider:true },
-      { label:'Delete', sc:'Del', danger:true, act:()=>{ state.selection={kind:'element',id}; deleteSelection(); } },
+      { label:'Delete', sc:'Del', danger:true, act:()=>{ state.multiSelection=[]; state.selection={kind:'element',id}; deleteSelection(); } },
     ]);
   }
   stage.addEventListener('contextmenu', e=>{
@@ -2308,8 +2357,10 @@
     state.dims.forEach(d=>{ d.refs = d.refs.filter(r=>!dead(r)); });
     state.dims = state.dims.filter(d=>d.refs.length>=2);
   }
-  function deleteSelection(){
-    const s=state.selection; if(!s)return;
+  // Delete one selection-shaped target ({kind,id}) — a wall, element, dim,
+  // grid, or box (with its descendant boxes/grids). Shared by single delete
+  // and the multi-select bulk delete below.
+  function deleteOne(s){
     if(s.kind==='wall')state.walls=state.walls.filter(w=>w.id!==s.id);
     if(s.kind==='element')state.elements=state.elements.filter(el=>el.id!==s.id);
     if(s.kind==='dim')state.dims=state.dims.filter(d=>d.id!==s.id);
@@ -2330,9 +2381,14 @@
       state.boxes = state.boxes.filter(b=>!boxIds.has(b.id));
       relabelGrid();
     }
+  }
+  function deleteSelection(){
+    const targets = state.multiSelection.length ? state.multiSelection : (state.selection ? [state.selection] : []);
+    if (!targets.length) return;
+    for (const s of targets) deleteOne(s);
     refreshTray(); // wall/element/grid/box removal can all change a preview's contents
     saveStateToStorage(); // deletes always persist immediately, so they can't come back on reload
-    state.selection=null; draw();
+    state.selection=null; state.multiSelection=[]; draw();
   }
 
   function fitView(){
@@ -2394,7 +2450,7 @@
     else if(k==='e')setTool('eqdim');
     else if(k==='f')setTool('flexdim');
     else if(e.key==='Delete'||e.key==='Backspace')deleteSelection();
-    else if(e.key==='Escape'){drag=null;dimBuild=null;state.inserting=null;state.selection=null;buildInsertList();draw();}
+    else if(e.key==='Escape'){drag=null;dimBuild=null;state.inserting=null;state.selection=null;state.multiSelection=[];buildInsertList();draw();}
     else if(e.key==='Home')fitView();
   });
   window.addEventListener('keyup', e=>{
