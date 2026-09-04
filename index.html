@@ -139,7 +139,6 @@
   #tray h3 { font-size: 12px; font-weight: 600; padding: 12px 12px 8px; color: var(--ink); }
   #tray .list { padding: 0 10px 10px; }
   #tray .list:not(:last-child) { border-bottom: 1px solid var(--border); }
-  #tray .empty { color: var(--muted); font-size: 11px; padding: 4px 2px 10px; line-height: 1.5; }
   #tray .row {
     display: flex; align-items: center; gap: 6px;
     border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px;
@@ -1675,7 +1674,7 @@
   }
   const trayList=document.getElementById('trayList');
   function buildSavedLayoutsList(){
-    if(!state.savedLayouts.length){ trayList.innerHTML='<div class="empty">Close a Layout boundary to save it here. Then click a saved layout and pick four edges to place it.</div>'; return; }
+    if(!state.savedLayouts.length){ trayList.innerHTML=''; return; }
     trayList.innerHTML='';
     for(const tpl of state.savedLayouts){
       const item=document.createElement('div');
@@ -1706,7 +1705,7 @@
   const productsListEl=document.getElementById('productsList');
   function buildProductsList(){
     const products = state.boxes.filter(b=>b.kind==='product');
-    if(!products.length){ productsListEl.innerHTML='<div class="empty">Draw a Product boundary to name it here.</div>'; return; }
+    if(!products.length){ productsListEl.innerHTML=''; return; }
     productsListEl.innerHTML='';
     for(const bx of products){
       const row=document.createElement('div'); row.className='row';
@@ -1721,7 +1720,7 @@
   const unitplansListEl=document.getElementById('unitplansList');
   function buildUnitplansList(){
     const plans = state.boxes.filter(b=>b.kind==='unitplan' && b.name);
-    if(!plans.length){ unitplansListEl.innerHTML='<div class="empty">Close a Unit Plan to name & track it here.</div>'; return; }
+    if(!plans.length){ unitplansListEl.innerHTML=''; return; }
     unitplansListEl.innerHTML='';
     for(const bx of plans){
       const {prefix,suffix} = unitplanDisplayName(bx);
