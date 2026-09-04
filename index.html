@@ -377,20 +377,30 @@
     return Math.hypot(p.x-(a.x+t*dx), p.y-(a.y+t*dy));
   }
 
+  // A wall/element/grid only counts as hit/hoverable while it belongs to the
+  // currently active (deepest-open) container — a closed nested boundary's
+  // own contents stay untouchable until you actually open it. Boundary
+  // (box) edges are exempt: those you can always click to open/select.
+  function belongsToActiveContainer(containerId){
+    const ac = activeContainer();
+    return containerId === (ac ? ac.id : null);
+  }
   function hitTest(wp) {
     const tol = 10 / ppfNow();
     for (let i=state.elements.length-1;i>=0;i--) {
-      if (pointInElement(wp, state.elements[i])) return { kind:'element', id:state.elements[i].id };
+      if (belongsToActiveContainer(state.elements[i].containerId) && pointInElement(wp, state.elements[i])) return { kind:'element', id:state.elements[i].id };
     }
     for (const wl of state.walls) {
-      if (distToSeg(wp, endPos(wl.a), endPos(wl.b)) < Math.max(tol, (wl.thickness||0.5)/2))
+      if (belongsToActiveContainer(wl.containerId) && distToSeg(wp, endPos(wl.a), endPos(wl.b)) < Math.max(tol, (wl.thickness||0.5)/2))
         return { kind: 'wall', id: wl.id };
     }
     for (const d of state.dims) {
+      if (!belongsToActiveContainer(d.containerId)) continue;
       const ep = dimLineEndpoints(d);
       if (ep && distToSeg(wp, ep[0], ep[1]) < tol) return { kind: 'dim', id: d.id };
     }
     for (const g of state.gridlines) {
+      if (!belongsToActiveContainer(g.boxId)) continue;
       const gp = gridPos(g);
       const bx = g.boxId != null ? findById(state.boxes, g.boxId) : null;
       const e = bx ? boxExt(bx) : null;
@@ -522,15 +532,18 @@
       if (overlaps(e.x1,e.y1,e.x2,e.y2)) items.push({kind:'box', id:b.id});
     }
     for (const wl of state.walls) {
+      if (!belongsToActiveContainer(wl.containerId)) continue;
       const a=endPos(wl.a), b=endPos(wl.b);
       if (overlaps(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.max(a.x,b.x),Math.max(a.y,b.y))) items.push({kind:'wall', id:wl.id});
     }
     for (const el of state.elements) {
+      if (!belongsToActiveContainer(el.containerId)) continue;
       const cs = elementCorners(el);
       const xs=cs.map(c=>c.x), ys=cs.map(c=>c.y);
       if (overlaps(Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys))) items.push({kind:'element', id:el.id});
     }
     for (const g of state.gridlines) {
+      if (!belongsToActiveContainer(g.boxId)) continue;
       const gp = gridPos(g);
       if (g.type==='v' ? (gp>=r.x1 && gp<=r.x2) : (gp>=r.y1 && gp<=r.y2)) items.push({kind:'grid', id:g.id});
     }
@@ -1210,13 +1223,14 @@
   function hoverCandidatesAt(sp) {
     const wp=s2w(sp), tol=10/ppfNow();
     const cands=[];
-    for (const el of state.elements) if (pointInElement(wp,el)) cands.push({kind:'element', id:el.id, z:3});
+    for (const el of state.elements) if (belongsToActiveContainer(el.containerId) && pointInElement(wp,el)) cands.push({kind:'element', id:el.id, z:3});
     const zk={layout:0,unitplan:1,product:2};
     for (const b of state.boxes) if (boxEdgeUnder(b,wp,tol)) cands.push({kind:'box', id:b.id, z:(zk[b.kind]??2)});
     // grid lines cycle last (after all containers) — but a wall under the cursor
     // keeps priority, so walls drawn along a grid stay selectable
-    const wallUnder = state.walls.some(wl => distToSeg(wp, endPos(wl.a), endPos(wl.b)) < Math.max(tol,(wl.thickness||0.5)/2));
+    const wallUnder = state.walls.some(wl => belongsToActiveContainer(wl.containerId) && distToSeg(wp, endPos(wl.a), endPos(wl.b)) < Math.max(tol,(wl.thickness||0.5)/2));
     if (!wallUnder) for (const g of state.gridlines) {
+      if (!belongsToActiveContainer(g.boxId)) continue;
       const gp=gridPos(g);
       const bx = g.boxId!=null ? findById(state.boxes,g.boxId) : null;
       const e = bx ? boxExt(bx) : null;
@@ -1295,6 +1309,12 @@
         if (!hit) { const cb = boxContaining(wp); if (cb) hit = { kind:'box', id:cb.id }; }
       }
       state.selection = hit;
+      // an open container can't be dragged out from under the work happening
+      // inside it — resizing (handled above) is still fine, just not moving
+      if (hit && hit.kind==='box' && findById(state.boxes, hit.id)?.open) {
+        draw();
+        return;
+      }
       if (hit) {
         state.multiSelection = [];
         drag = { kind:'move', hit, start: snapped, orig: cloneEntity(hit) };
