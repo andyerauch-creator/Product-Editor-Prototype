@@ -2103,12 +2103,18 @@
   }
   // Render one kind's whole tray: one card per family's root — its branches
   // (if any) live in the separate Branches tray, opened by clicking it.
+  // Products are the exception: they never branch, so clicking one instead
+  // opens it straight on the drafting canvas, and it never shows the
+  // Branches tray or the persistent blue "selected" highlight.
   function buildKindList(kind, listEl){
     const groups = buildLibraryGroups(kind);
     listEl.innerHTML='';
     for (const g of groups) {
-      const card = buildLibraryItem(kind, g.root, ()=>selectBranchRoot(kind, g.root.obj.id));
-      if (state.branchRootId===g.root.obj.id) card.classList.add('lib-selected');
+      const onClick = kind==='product'
+        ? (g.root.live ? ()=>{ openWithAncestors(g.root.obj); draw(); } : null)
+        : ()=>selectBranchRoot(kind, g.root.obj.id);
+      const card = buildLibraryItem(kind, g.root, onClick);
+      if (kind!=='product' && state.branchRootId===g.root.obj.id) card.classList.add('lib-selected');
       listEl.appendChild(card);
     }
   }
