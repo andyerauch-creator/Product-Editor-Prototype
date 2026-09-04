@@ -144,12 +144,12 @@
   }
   #tray .item:hover { border-color: var(--accent); }
   #tray .item.placing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  #tray .item canvas { display: block; width: 100%; aspect-ratio: 1 / 1; background: var(--bg); }
-  #tray .item .nm { font-size: 11px; padding: 5px 8px; color: var(--ink); border-top: 1px solid var(--border); }
+  #tray .item canvas { display: block; width: 100%; aspect-ratio: 1 / 1; background: var(--bg); border-bottom: 1px solid var(--border); }
+  #tray .item .nm { font-size: 11px; padding: 6px 8px; color: var(--ink); }
   #tray .item .nm .suffix { color: var(--muted); }
   #tray .item .nm input[type=text] {
     width: 100%; background: var(--bg); border: 1px solid var(--border);
-    color: var(--ink); border-radius: 6px; padding: 4px 6px; font-size: 11px;
+    color: var(--ink); border-radius: 6px; padding: 6px 7px; font-size: 12px;
   }
   #tray .item .del {
     position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; border-radius: 4px;
@@ -1754,7 +1754,7 @@
       const item=document.createElement('div'); item.className='item';
       const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
       const nm=document.createElement('div'); nm.className='nm';
-      const inp=document.createElement('input'); inp.type='text'; inp.value=bx.name||'';
+      const inp=document.createElement('input'); inp.type='text'; inp.value=bx.name||''; inp.placeholder='Name this product';
       inp.addEventListener('click', e=>e.stopPropagation());
       inp.addEventListener('input', ()=>{ bx.name=inp.value; buildUnitplansList(); });
       nm.appendChild(inp);
