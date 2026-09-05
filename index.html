@@ -2585,7 +2585,11 @@
     // (if it has any) shows alongside, rather than instead of, opening it.
     const standalone = parentId==null;
     for (const g of groups) {
-      const hasBranches = kind!=='product' && g.branches.length>0;
+      // Pushed branches (from ANY Product, waiting for review) count toward
+      // this root's star too — they're not shown inline in this list
+      // anymore, only in the Branches tray, alongside its local branches.
+      const pushedHere = standalone ? pushedBranchesForRoot(kind, g.root.obj.id) : [];
+      const hasBranches = kind!=='product' && (g.branches.length>0 || pushedHere.length>0);
       const onClick = kind==='product'
         ? (g.root.live ? ()=>{ openWithAncestors(g.root.obj); centerViewOnBox(g.root.obj, 10); draw(); } : null)
         : (standalone && g.root.live)
@@ -2599,17 +2603,6 @@
       const card = buildLibraryItem(kind, g.root, onClick, hasBranches);
       if (hasBranches && state.branchRootId===g.root.obj.id) card.classList.add('lib-selected');
       listEl.appendChild(card);
-    }
-    // Pushed branches from every Product, waiting for review — only shown
-    // here, in the standalone Unit Plan/Layout Editor's own top-level list
-    // (Products never push anything, and this isn't shown while browsing
-    // nested inside an open Product).
-    if (standalone && (kind==='unitplan' || kind==='layout')) {
-      for (const g of buildPushedGroups(kind)) {
-        const header=document.createElement('div'); header.className='pushed-group-header'; header.textContent=g.name;
-        listEl.appendChild(header);
-        for (const box of g.items) listEl.appendChild(buildPushedCard(kind, box));
-      }
     }
   }
   const productsListEl=document.getElementById('productsList');
@@ -2628,17 +2621,33 @@
   const branchesListEl=document.getElementById('branchesList');
   function refreshBranchesTray(){
     if (state.branchRootId==null || trayEl.hidden) { branchesTrayEl.hidden=true; return; }
-    const g = buildLibraryGroups(state.branchRootKind).find(g=>g.root.obj.id===state.branchRootId);
+    // Scoped the same way the list that opened this tray was — a branch
+    // nested in some other, unrelated Product stays invisible here too,
+    // same rule as the list itself (only a star it already showed a star
+    // for should be openable at all).
+    const g = buildLibraryGroups(state.branchRootKind, currentLibraryParentId()).find(g=>g.root.obj.id===state.branchRootId);
     if (!g) { state.branchRootId=null; state.branchRootKind=null; branchesTrayEl.hidden=true; return; }
     branchesTrayEl.hidden=false;
     branchesTitleTextEl.textContent = 'Branches: ' + (g.root.obj.name || KIND_LABEL[state.branchRootKind]);
     branchesListEl.innerHTML='';
-    if (!g.branches.length) {
+    // Pushed branches (from any Product) are the only OTHER way a branch of
+    // this root reaches this tray — each one labeled by the Product it came
+    // from, not lumped into the main Library list.
+    const pushed = pushedBranchesForRoot(state.branchRootKind, state.branchRootId);
+    if (!g.branches.length && !pushed.length) {
       const note=document.createElement('div'); note.className='empty-note'; note.textContent='No branches yet.';
       branchesListEl.appendChild(note);
     } else {
       for (const br of g.branches) branchesListEl.appendChild(buildLibraryItem(state.branchRootKind, br));
+      for (const box of pushed) branchesListEl.appendChild(buildPushedCard(state.branchRootKind, box));
     }
+  }
+  // Every pushed (live) branch of `kind` descended from this exact root,
+  // regardless of which Product pushed it — used both for the root's own
+  // star (does it have anything to show at all) and for populating its
+  // Branches tray.
+  function pushedBranchesForRoot(kind, rootId){
+    return state.boxes.filter(b=>b.kind===kind && b.pushed && b.rootId===rootId);
   }
   document.getElementById('closeBranchesBtn').addEventListener('click', e=>{
     e.stopPropagation();
@@ -3592,25 +3601,15 @@
     saveStateToStorage();
     draw();
   }
-  // Every pushed branch of `kind`, grouped by which Product it came from —
-  // shown underneath a standalone Editor's own file list.
-  function buildPushedGroups(kind){
-    const groups = new Map(); // productId -> {name, items:[box,...]}
-    for (const b of state.boxes) {
-      if (b.kind!==kind || !b.pushed) continue;
-      const p = nearestProduct(b);
-      const pid = p ? p.id : 0;
-      const pname = p ? (p.name||'Product') : 'Unknown Product';
-      if (!groups.has(pid)) groups.set(pid, {name:pname, items:[]});
-      groups.get(pid).items.push(b);
-    }
-    return [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name));
-  }
+  // A pushed branch's card in the Branches tray is labeled by the PRODUCT
+  // it came from (that's the useful, distinguishing fact once you're
+  // already looking at "branches of X") rather than its own auto-generated
+  // name, which just awkwardly restates that same product name anyway.
   function buildPushedCard(kind, box){
     const item=document.createElement('div'); item.className='item pushed';
     const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
     const nm=document.createElement('div'); nm.className='nm';
-    const label=document.createElement('div'); label.className='label'; label.textContent=box.name||KIND_LABEL[kind];
+    const label=document.createElement('div'); label.className='label'; label.textContent=nearestProductName(box) || box.name || KIND_LABEL[kind];
     nm.appendChild(label);
     const dims=document.createElement('div'); dims.className='dims'; dims.textContent=tileSizeLabel({live:true,obj:box});
     nm.appendChild(dims);
