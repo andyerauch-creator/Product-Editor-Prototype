@@ -206,12 +206,6 @@
     max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     font-size: 10.5px;
   }
-  /* A pushed card's title naming its source Product — same look the old
-     section header had, just scoped to one card instead of a whole group. */
-  .panel .item .nm .product-title {
-    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font-size: 9px; letter-spacing: .3px; text-transform: uppercase; color: var(--muted);
-  }
   .panel .item .nm input[type=text] {
     width: 100%; min-width: 0; background: none; border: 1px solid transparent;
     color: var(--ink); border-radius: 5px; padding: 2px 4px; font-size: 10.5px; text-align: center;
@@ -2487,10 +2481,10 @@
     const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
     if (hasBranches) { const star=document.createElement('span'); star.className='branch-star'; star.textContent='★'; star.title='Has branches'; item.appendChild(star); }
     const nm=document.createElement('div'); nm.className='nm';
-    const inp=document.createElement('input'); inp.type='text'; inp.value=obj.name||'';
+    const inp=document.createElement('input'); inp.type='text'; inp.value=obj.name||''; inp.title=obj.name||'';
     inp.placeholder='Name this '+KIND_LABEL[kind].toLowerCase();
     inp.addEventListener('click', e=>e.stopPropagation());
-    inp.addEventListener('input', ()=>{ obj.name=inp.value; });
+    inp.addEventListener('input', ()=>{ obj.name=inp.value; inp.title=inp.value; });
     nm.appendChild(inp);
     const dims=document.createElement('div'); dims.className='dims'; dims.textContent=tileSizeLabel(entry);
     nm.appendChild(dims);
@@ -2640,16 +2634,35 @@
     branchesTitleTextEl.textContent = 'Branches: ' + (g.root.obj.name || KIND_LABEL[state.branchRootKind]);
     branchesListEl.innerHTML='';
     // Pushed branches (from any Product) are the only OTHER way a branch of
-    // this root reaches this tray — each one labeled by the Product it came
-    // from, not lumped into the main Library list.
+    // this root reaches this tray — grouped under a heading per Product
+    // (there can be several branches of the same root from one Product),
+    // not lumped into the main Library list.
     const pushed = pushedBranchesForRoot(state.branchRootKind, state.branchRootId);
     if (!g.branches.length && !pushed.length) {
       const note=document.createElement('div'); note.className='empty-note'; note.textContent='No branches yet.';
       branchesListEl.appendChild(note);
     } else {
       for (const br of g.branches) branchesListEl.appendChild(buildLibraryItem(state.branchRootKind, br));
-      for (const box of pushed) branchesListEl.appendChild(buildPushedCard(state.branchRootKind, box));
+      for (const group of groupByProduct(pushed)) {
+        const header=document.createElement('div'); header.className='pushed-group-header'; header.textContent=group.name;
+        branchesListEl.appendChild(header);
+        for (const box of group.items) branchesListEl.appendChild(buildPushedCard(state.branchRootKind, box));
+      }
     }
+  }
+  // Group a set of pushed boxes by which Product each came from, A→Z —
+  // several branches of the same root pushed from one Product land under
+  // one heading, not one each.
+  function groupByProduct(boxes){
+    const groups = new Map(); // productId -> {name, items:[box,...]}
+    for (const b of boxes) {
+      const p = nearestProduct(b);
+      const pid = p ? p.id : 0;
+      const pname = p ? (p.name||'Product') : 'Unknown Product';
+      if (!groups.has(pid)) groups.set(pid, {name:pname, items:[]});
+      groups.get(pid).items.push(b);
+    }
+    return [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name));
   }
   // Every pushed (live) branch of `kind` descended from this exact root,
   // regardless of which Product pushed it — used both for the root's own
@@ -3148,7 +3161,7 @@
       item.appendChild(star);
     }
     const nm=document.createElement('div'); nm.className='nm';
-    const label=document.createElement('div'); label.className='label'; label.textContent=obj.name || KIND_LABEL[kind];
+    const label=document.createElement('div'); label.className='label'; label.textContent=obj.name || KIND_LABEL[kind]; label.title=label.textContent;
     nm.appendChild(label);
     const dims=document.createElement('div'); dims.className='dims'; dims.textContent=tileSizeLabel(entry);
     nm.appendChild(dims);
@@ -3610,18 +3623,14 @@
     saveStateToStorage();
     draw();
   }
-  // A pushed branch's card in the Branches tray carries a small title naming
-  // the Product it came from (the useful, distinguishing fact once you're
-  // already looking at "branches of X"), with the branch's own name still
-  // underneath as the actual label — the title doesn't replace it.
+  // A pushed branch's own card just names itself — which Product it came
+  // from is the GROUP's heading (buildPushedGroupSections), not repeated on
+  // every card under it.
   function buildPushedCard(kind, box){
     const item=document.createElement('div'); item.className='item pushed';
     const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
     const nm=document.createElement('div'); nm.className='nm';
-    const productTitle=document.createElement('div'); productTitle.className='product-title';
-    productTitle.textContent = nearestProductName(box) || 'Unknown Product';
-    nm.appendChild(productTitle);
-    const label=document.createElement('div'); label.className='label'; label.textContent=box.name||KIND_LABEL[kind];
+    const label=document.createElement('div'); label.className='label'; label.textContent=box.name||KIND_LABEL[kind]; label.title=label.textContent;
     nm.appendChild(label);
     const dims=document.createElement('div'); dims.className='dims'; dims.textContent=tileSizeLabel({live:true,obj:box});
     nm.appendChild(dims);
