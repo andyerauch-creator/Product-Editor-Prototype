@@ -2377,13 +2377,46 @@
   // "just this product" — Save always commits the whole current drawing).
   // Deletes persist immediately so a removed item can't come back on reload.
   const STORAGE_KEY = 'draftingSpaceGridsWalls.v1';
-  function saveStateToStorage(){
+  // The whole app's persisted shape, shared by localStorage and the /api/state
+  // server sync — one object, one place that lists what "the saved document"
+  // actually consists of.
+  function snapshotForSave(){
+    return {
+      nextId, boxes: state.boxes, gridlines: state.gridlines, walls: state.walls,
+      elements: state.elements, dims: state.dims, archived: state.archived,
+      elementShapes: state.elementShapes, editorMode: state.editorMode,
+    };
+  }
+  function applyLoadedData(data){
+    if (!data) return;
+    if (data.boxes) state.boxes = data.boxes;
+    if (data.gridlines) state.gridlines = data.gridlines;
+    if (data.walls) state.walls = data.walls;
+    if (data.elements) state.elements = data.elements;
+    if (data.dims) state.dims = data.dims;
+    if (data.archived) state.archived = data.archived;
+    if (data.elementShapes) state.elementShapes = data.elementShapes;
+    if (typeof data.editorMode === 'string') state.editorMode = data.editorMode;
+    if (typeof data.nextId === 'number') nextId = data.nextId;
+  }
+  // Fire-and-forget: the server copy is a bonus (lets any device pull the
+  // same document via /api/state), never a requirement — a failed request
+  // (offline, opened straight from disk with no server, no DB configured)
+  // must not block or break the local save that already just happened.
+  function saveStateToServer(snapshot){
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        nextId, boxes: state.boxes, gridlines: state.gridlines, walls: state.walls,
-        elements: state.elements, dims: state.dims, archived: state.archived,
-        elementShapes: state.elementShapes, editorMode: state.editorMode,
-      }));
+      fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snapshot),
+      }).catch(()=>{});
+    } catch(e) { /* fetch itself unavailable — ignore */ }
+  }
+  function saveStateToStorage(){
+    const snapshot = snapshotForSave();
+    saveStateToServer(snapshot);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
       return true;
     } catch(e) { return false; } // storage unavailable (private mode, disabled, quota) — no-op
   }
@@ -2391,17 +2424,25 @@
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
-      const data = JSON.parse(raw);
-      if (data.boxes) state.boxes = data.boxes;
-      if (data.gridlines) state.gridlines = data.gridlines;
-      if (data.walls) state.walls = data.walls;
-      if (data.elements) state.elements = data.elements;
-      if (data.dims) state.dims = data.dims;
-      if (data.archived) state.archived = data.archived;
-      if (data.elementShapes) state.elementShapes = data.elementShapes;
-      if (typeof data.editorMode === 'string') state.editorMode = data.editorMode;
-      if (typeof data.nextId === 'number') nextId = data.nextId;
+      applyLoadedData(JSON.parse(raw));
     } catch(e) { /* corrupt or unavailable — start blank */ }
+  }
+  // Tried first, at startup only: the shared server copy, so any device
+  // opening the deployed app sees the same document instead of whatever (if
+  // anything) is in that browser's own localStorage. Returns whether it
+  // found and applied real saved data — the caller falls back to
+  // loadStateFromStorage() when this comes back false (no /api/state route
+  // at all, e.g. a plain static server or opened straight from disk; no DB
+  // configured; or nothing saved to it yet).
+  async function loadStateFromServer(){
+    try {
+      const res = await fetch('/api/state');
+      if (!res.ok) return false;
+      const { data } = await res.json();
+      if (!data) return false;
+      applyLoadedData(data);
+      return true;
+    } catch(e) { return false; } // no network, no route, bad response — fall back
   }
   // Brief "Saved" confirmation on a button after a successful/failed save.
   // Tile action glyphs, transcribed from Cedar Studio's own chrome icon set
@@ -3914,15 +3955,24 @@
   // ---- Boot -----------------------------------------------------------------
   function seed(){
     state.view={x:80,y:70,scale:1};
-    loadStateFromStorage(); // restore whatever was last explicitly saved, if anything
   }
-  seed();
-  updateModeSwitcher();
-  updateToolsetVisibility();
-  refreshTray();
-  resize();
-  setTool('select');
-  fitView();
+  // The shared server copy (if this deployment has /api/state wired up to a
+  // database, and something's actually been saved to it) wins over whatever
+  // is in this browser's own localStorage — that's what makes the same
+  // document show up on any device. Falls back to localStorage otherwise
+  // (no route, no DB, nothing saved yet, offline, opened straight from disk).
+  async function init(){
+    seed();
+    const gotServerData = await loadStateFromServer();
+    if (!gotServerData) loadStateFromStorage();
+    updateModeSwitcher();
+    updateToolsetVisibility();
+    refreshTray();
+    resize();
+    setTool('select');
+    fitView();
+  }
+  init();
 })();
 </script>
 </body>
