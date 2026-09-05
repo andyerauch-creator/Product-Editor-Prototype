@@ -200,17 +200,26 @@
   .panel .item.archived canvas { opacity: .55; }
   .panel .item.archived .nm .suffix { color: var(--danger); }
   .panel .item.placing canvas { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .panel .item .nm { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; font-size: 12px; color: var(--ink); }
-  .panel .item .nm .suffix { color: var(--muted); font-size: 11px; }
-  .panel .item .nm .label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .panel .item .nm { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; font-size: 10.5px; color: var(--ink); }
+  .panel .item .nm .suffix { color: var(--muted); font-size: 10px; }
+  .panel .item .nm .label {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 10.5px;
+  }
+  /* A pushed card's title naming its source Product — same look the old
+     section header had, just scoped to one card instead of a whole group. */
+  .panel .item .nm .product-title {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 9px; letter-spacing: .3px; text-transform: uppercase; color: var(--muted);
+  }
   .panel .item .nm input[type=text] {
     width: 100%; min-width: 0; background: none; border: 1px solid transparent;
-    color: var(--ink); border-radius: 5px; padding: 2px 4px; font-size: 12.5px; text-align: center;
+    color: var(--ink); border-radius: 5px; padding: 2px 4px; font-size: 10.5px; text-align: center;
   }
   .panel .item .nm input[type=text]:hover, .panel .item .nm input[type=text]:focus {
     background: var(--panel-2); border-color: var(--border);
   }
-  .panel .item .dims { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+  .panel .item .dims { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
   /* Hover-only action chip floating over the thumbnail's corner, not a
      permanent row — matches the real Library tile's per-file toolbar. */
   .panel .item .actions {
@@ -3601,15 +3610,18 @@
     saveStateToStorage();
     draw();
   }
-  // A pushed branch's card in the Branches tray is labeled by the PRODUCT
-  // it came from (that's the useful, distinguishing fact once you're
-  // already looking at "branches of X") rather than its own auto-generated
-  // name, which just awkwardly restates that same product name anyway.
+  // A pushed branch's card in the Branches tray carries a small title naming
+  // the Product it came from (the useful, distinguishing fact once you're
+  // already looking at "branches of X"), with the branch's own name still
+  // underneath as the actual label — the title doesn't replace it.
   function buildPushedCard(kind, box){
     const item=document.createElement('div'); item.className='item pushed';
     const cv2=document.createElement('canvas'); cv2.width=150; cv2.height=150; item.appendChild(cv2);
     const nm=document.createElement('div'); nm.className='nm';
-    const label=document.createElement('div'); label.className='label'; label.textContent=nearestProductName(box) || box.name || KIND_LABEL[kind];
+    const productTitle=document.createElement('div'); productTitle.className='product-title';
+    productTitle.textContent = nearestProductName(box) || 'Unknown Product';
+    nm.appendChild(productTitle);
+    const label=document.createElement('div'); label.className='label'; label.textContent=box.name||KIND_LABEL[kind];
     nm.appendChild(label);
     const dims=document.createElement('div'); dims.className='dims'; dims.textContent=tileSizeLabel({live:true,obj:box});
     nm.appendChild(dims);
